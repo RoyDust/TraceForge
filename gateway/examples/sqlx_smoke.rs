@@ -4,6 +4,7 @@
 //! `sqlx::query!` 宏在编译期连库校验列名 / 类型, 因此构建需要：
 //!   - 可连的 DATABASE_URL (schema 已由 `prisma db push` / migrate 建好), 或
 //!   - 提交的离线缓存 `cargo sqlx prepare` 生成的 .sqlx/。
+//!
 //! schema 漂移会直接让本文件编译失败 —— 这正是双 ORM 的同步闸门 (CI 用 --examples 编译它)。
 
 use anyhow::{Context, Result};

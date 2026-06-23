@@ -3,8 +3,8 @@ name = "traceforge-gateway"
 version = "0.1.0"
 edition = "2021"
 
-# Rust 数据面。本仓库当前只放最小 sqlx 读写示例 (见 src/main.rs);
-# 完整网关 (axum 代理 + SSE 透传 + Trace 采集) 按 PRD Stage 1+ 展开。
+# Rust 数据面 (axum 服务)。当前: src/main.rs 提供 /healthz /readyz 健康检查,
+# examples/sqlx_smoke.rs 作双 ORM 编译期闸门; 代理转发 + SSE 透传 + 限流 + Trace 采集按 PRD Stage 1+ 展开。
 
 [dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
