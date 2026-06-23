@@ -42,11 +42,13 @@
 
 ## 当前状态
 
-早期阶段，数据契约先行。已落地：
+早期阶段，骨架先行。已落地：
 
 - ✅ **数据契约**：`prisma/schema.prisma`（15 model + 6 enum，列名 snake_case 对齐 sqlx），通过 `prisma validate`。
 - ✅ **种子数据**：`prisma/seed.ts` 幂等灌入示例项目 / Key / Provider / Model / 定价 / Prompt / 一条 Trace。
-- ✅ **双 ORM 闸门验证**：`gateway/` 最小 sqlx 读写示例，`query!` 宏编译期连库校验 Rust SQL 与 schema 一致。
+- ✅ **双 ORM 闸门验证**：`gateway/examples/sqlx_smoke.rs`，`query!` 宏编译期连库校验 Rust SQL 与 schema 一致（CI 跑 `cargo build --bins --examples`）。
+- ✅ **gateway 常驻服务**：axum HTTP server，`/healthz`（存活）+ `/readyz`（探 PostgreSQL）。
+- ✅ **console 骨架**：Next.js 16 控制台，连库列出项目（首页）。
 
 按 PRD 分阶段推进中：Rust 网关 MVP（SSE 透传 + 限流）→ Trace 采集 → 控制台 + 瀑布图 → 成本看板 → Prompt 版本 → Eval。见下方[路线图](#路线图)与 [工程 PRD](TraceForge-工程PRD.md)。
 
@@ -57,7 +59,8 @@
 | `prisma/schema.prisma` | 数据契约（单一事实源，15 model + 6 enum） |
 | `prisma.config.ts` | Prisma 7 连接 / 迁移 / seed 配置 |
 | `prisma/seed.ts` | 示例数据（项目 / Key / 模型 / 定价 / Prompt / 一条 Trace） |
-| `gateway/` | Rust 数据面（当前为最小 sqlx 读写示例） |
+| `app/`、`lib/` | Next.js 控制台（控制面，App Router + Prisma 客户端） |
+| `gateway/` | Rust 数据面（axum 服务 + `examples/sqlx_smoke.rs` 闸门示例） |
 | `.github/workflows/ci.yml` | Prisma schema 与 Rust sqlx 同步校验 |
 | `TraceForge-工程PRD.md` | 工程实现依据（精修层） |
 | `TraceForge_AI网关与Agent可观测平台_PRD.md` | 完整版 PRD（字段口径权威源） |
@@ -72,13 +75,30 @@ npm install
 npm run db:push                 # 用 schema.prisma 建表 (首版无迁移文件; 正式用 db:migrate)
 npm run db:seed                 # 灌示例数据
 npm run db:studio               # 可选: 浏览数据
-
-# Rust 数据面最小示例 (sqlx query! 宏编译期对照上面建的表校验)
-cd gateway
-cargo run                       # 读 gateway/.env 里的 DATABASE_URL; 需可连; 离线编译见下
+npm run dev                      # 起控制台 -> http://localhost:3000 (列出 seed 项目)
 ```
 
 > 离线编译（无 DB 时 `cargo build`）：在能连库时跑 `cargo sqlx prepare` 生成并提交 `gateway/.sqlx/`。
+
+### 本地原生开发（无 Docker）
+
+两个服务各自一个进程，都直连同一个 PostgreSQL：
+
+```bash
+# 控制台 (TS 控制面) —— 仓库根
+npm run dev                      # http://localhost:3000
+
+# 网关 (Rust 数据面) —— gateway/
+cd gateway
+cargo run                       # 读 gateway/.env; 默认 http://0.0.0.0:8080
+curl localhost:8080/healthz     # 存活 -> ok
+curl localhost:8080/readyz      # 就绪 (探 PostgreSQL) -> ready
+```
+
+- 网关监听地址可用 `GATEWAY_ADDR` 覆盖（如 8080 被占）：在 `gateway/.env` 设 `GATEWAY_ADDR="0.0.0.0:8787"`。
+- 控制台端口被占时用 `npm run dev -- -p 3001`。
+- 双 ORM 闸门冒烟：`cd gateway && cargo run --example sqlx_smoke`（写读一条 Trace，验证 sqlx 与 schema 一致）。
+- Docker / Compose 留到部署阶段（PRD Stage 6）或本机装 Docker 后再做。
 
 ### 在非 public schema / 共享库上开发
 

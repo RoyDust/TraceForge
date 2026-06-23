@@ -27,9 +27,9 @@
   - `lib/prisma.ts` 单例：PrismaPg 适配器 + 从 `DATABASE_URL` 解析 `?schema=`（同 seed.ts 口径）
   - `next.config.ts` serverExternalPackages 排除 prisma/pg；`.gitignore` 加 Next 产物
   - ✅ 验证通过：`npm run dev` → `http://localhost:3000` HTTP 200，页面列出 seed 的 “Demo Project / TraceForge 示例项目”（实测）
-- [ ] **3. README 补「本地原生开发」段**
-  - 写明两个进程怎么各自起、端口、依赖的 `.env`
-  - → 验证：照 README 从零跑通两个服务
+- [x] **3. README 补「本地原生开发」段**✅
+  - 新增「本地原生开发（无 Docker）」小节：两进程怎么起、端口、`GATEWAY_ADDR`/`-p` 覆盖、闸门冒烟、Docker 延后说明
+  - 同步更新「当前状态」「目录」「快速开始」反映 axum 服务 + console 落地
 
 ## 范围边界（本阶段不做）
 
@@ -48,6 +48,16 @@
   - 归入 PRD Stage 6（部署：Docker + Nginx + GitHub Actions），或本机装了 Docker Desktop / WSL2 后提前做。
   - 前置：Docker build 阶段无 DB，需先 `cargo sqlx prepare` 生成并提交 `gateway/.sqlx/`。
 
-## Review（实施后补）
+## Review
 
-_待实施完成后在此记录实际结果与偏差。_
+三步全部完成并各自实测通过、逐步提交推送：
+
+- **第1步** `e84bfc1`：gateway → axum 常驻服务 + `/healthz` `/readyz`，实测两探针 200。过程发现本机 8080 被占，改 `GATEWAY_ADDR` 配置化用 8787。
+- **第2步** `cec39d7`：Next.js 16 控制台建在仓库根（复用 Prisma 配置，未单独建 `console/`），`localhost:3000` 列出 seed 的 Demo Project。
+- **第3步**：README 补本地原生开发说明 + 同步状态/目录/快速开始。
+
+偏差与取舍：
+- 计划写的是 `console/` 目录，实际建在仓库根（根已是 TS/Prisma 包，避免重复配置）。
+- Redis、Docker 化均按计划延后（Stage 1 / Stage 6）。
+
+下一步候选（未开始）：PRD Stage 1 —— `/v1/chat/completions` 代理 + SSE 流式透传，届时引入 Redis 做限流。
