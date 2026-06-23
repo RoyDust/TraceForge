@@ -1,0 +1,374 @@
+// TraceForge 数据契约 (单一事实源) — 由 PRD §3 / 核心数据表 推导。
+//
+// 约定:
+// - Prisma 负责 migration; Rust 用 sqlx 按表读写 (offline prepare / 编译期校验)。
+// - 列名 / 表名统一 snake_case (@map / @@map), 与 sqlx 读写口径一致。
+// - 主键 UUID: Prisma 用 uuid()、Rust 用 uuid crate, 均应用侧生成 (DB 列无默认, 插入必须带 id)。
+// - Rust 写入的 Trace 表不依赖 Prisma 客户端侧默认: @updatedAt 只用于控制面实体(Project)、Rust 不写它;
+//   @default(now()) 是 DB 级默认 (Rust 可省略), @default(uuid()) 是客户端侧 (Rust 自行生成 id)。
+// - 枚举只覆盖封闭集; status / error_code 用 String (集合会扩展), 期望值见各字段注释。
+// - 金额 Decimal(20,10); 日聚合 token 用 BigInt; 保留策略由定时任务处理, 不在 schema。
+// - Rust 侧枚举映射示例: #[derive(sqlx::Type)] #[sqlx(type_name = "span_type", rename_all = "snake_case")]
+//
+// 落地前用 `npx prisma format && npx prisma validate` 正式校验。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7: 连接 URL 不再放 schema, 移到 prisma.config.ts; 运行时 PrismaClient 用 driver adapter。
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────── 枚举 (封闭集) ─────────────────────────
+
+enum ApiKeyScope {
+  gateway // 可调 /v1/chat/completions
+  trace_ingest // 可上报 /api/traces
+
+  @@map("api_key_scope")
+}
+
+enum SpanType {
+  llm
+  tool
+  workflow
+  db
+  review
+
+  @@map("span_type")
+}
+
+enum UsageSource {
+  provider // 上游返回真实 usage
+  estimated // 本地 tokenizer 估算
+
+  @@map("usage_source")
+}
+
+enum TraceStatus {
+  running
+  success
+  failed
+  cancelled
+
+  @@map("trace_status")
+}
+
+enum TraceEventType {
+  stream_start
+  first_token
+  chunk_count
+  stream_end
+  stream_error
+  stream_cancelled
+  fallback_triggered
+  fallback_failed
+
+  @@map("trace_event_type")
+}
+
+enum AssertionType {
+  exact_match
+  contains
+  regex
+  json_schema
+  llm_judge
+  manual_review
+
+  @@map("assertion_type")
+}
+
+// ───────────────────────── 核心 (Stage 0–4) ─────────────────────────
+
+model Project {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  apiKeys      ApiKey[]
+  traceRuns    TraceRun[]
+  prompts      Prompt[]
+  evalDatasets EvalDataset[]
+  usageDaily   UsageDaily[]
+
+  @@map("project")
+}
+
+model ApiKey {
+  id               String        @id @default(uuid()) @db.Uuid
+  projectId        String        @map("project_id") @db.Uuid
+  scope            ApiKeyScope[] // 可组合: gateway / trace_ingest
+  keyHash          String        @unique @map("key_hash")
+  name             String
+  status           String        @default("active") // active / revoked
+  expiresAt        DateTime?     @map("expires_at")
+  rpmLimit         Int?          @map("rpm_limit")
+  concurrencyLimit Int?          @map("concurrency_limit")
+  revokedAt        DateTime?     @map("revoked_at")
+  createdAt        DateTime      @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("api_key")
+}
+
+model ModelProvider {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String
+  baseUrl         String   @map("base_url")
+  apiKeyEncrypted String?  @map("api_key_encrypted") // AES-256-GCM 密文; 永不明文回显, 运行时仅内存解密
+  type            String // openai / openai_compatible
+  status          String   @default("active")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  models ModelConfig[]
+
+  @@map("model_provider")
+}
+
+model ModelConfig {
+  id              String   @id @default(uuid()) @db.Uuid
+  providerId      String   @map("provider_id") @db.Uuid
+  modelName       String   @map("model_name")
+  displayName     String?  @map("display_name")
+  maxTokens       Int?     @map("max_tokens")
+  fallbackModelId String?  @map("fallback_model_id") @db.Uuid // 备用 model, 首 chunk 前按链切换
+  status          String   @default("active")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  provider    ModelProvider @relation(fields: [providerId], references: [id])
+  fallback    ModelConfig?  @relation("ModelFallback", fields: [fallbackModelId], references: [id], onDelete: SetNull)
+  fallbackFor ModelConfig[] @relation("ModelFallback")
+  evalRuns    EvalRun[]
+  usageDaily  UsageDaily[]
+
+  @@index([providerId])
+  @@map("model_config")
+}
+
+// 成本核算定价表 (按 provider + model + 时间版本)。成本计算的唯一价格来源。
+model ModelPricing {
+  id            String   @id @default(uuid()) @db.Uuid
+  provider      String
+  model         String
+  inputPrice    Decimal  @map("input_price") @db.Decimal(20, 10)
+  outputPrice   Decimal  @map("output_price") @db.Decimal(20, 10)
+  effectiveFrom DateTime @map("effective_from")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([provider, model, effectiveFrom])
+  @@index([provider, model])
+  @@map("model_pricing")
+}
+
+// ───────────────────────── Trace ─────────────────────────
+
+model TraceRun {
+  id              String       @id @default(uuid()) @db.Uuid
+  projectId       String       @map("project_id") @db.Uuid
+  name            String? // 网关自动调用默认取 model / endpoint; SDK 调用由业务命名
+  promptVersionId String?      @map("prompt_version_id") @db.Uuid
+  status          TraceStatus  @default(running)
+  errorCode       String?      @map("error_code")
+  inputPreview    String?      @map("input_preview")
+  outputPreview   String?      @map("output_preview")
+  totalTokens     Int?         @map("total_tokens")
+  cost            Decimal?     @db.Decimal(20, 10)
+  latencyMs       Int?         @map("latency_ms")
+  usageSource     UsageSource? @map("usage_source") // run 级聚合: 任一 Span 为 estimated 即 estimated
+  startedAt       DateTime     @default(now()) @map("started_at")
+  endedAt         DateTime?    @map("ended_at")
+
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  promptVersion PromptVersion? @relation(fields: [promptVersionId], references: [id], onDelete: SetNull)
+  spans         TraceSpan[]
+
+  @@index([projectId, startedAt])
+  @@index([status, startedAt])
+  @@map("trace_run")
+}
+
+model TraceSpan {
+  id               String       @id @default(uuid()) @db.Uuid
+  runId            String       @map("run_id") @db.Uuid
+  parentId         String?      @map("parent_id") @db.Uuid // 还原 Agent 多步链路
+  type             SpanType
+  name             String
+  model            String?
+  provider         String? // provider + model 用于按 ModelPricing 精确核价
+  inputPreview     String?      @map("input_preview")
+  outputPreview    String?      @map("output_preview")
+  rawPayloadRef    String?      @map("raw_payload_ref") // 指向单独 raw 表 (默认关闭)
+  promptTokens     Int?         @map("prompt_tokens")
+  completionTokens Int?         @map("completion_tokens")
+  usageSource      UsageSource? @map("usage_source")
+  cost             Decimal?     @db.Decimal(20, 10)
+  latencyMs        Int?         @map("latency_ms")
+  status           TraceStatus  @default(running)
+  errorCode        String?      @map("error_code")
+  error            String? // 脱敏后的错误摘要
+  startedAt        DateTime     @default(now()) @map("started_at")
+  endedAt          DateTime?    @map("ended_at")
+
+  run      TraceRun     @relation(fields: [runId], references: [id], onDelete: Cascade)
+  parent   TraceSpan?   @relation("SpanChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children TraceSpan[]  @relation("SpanChildren")
+  events   TraceEvent[]
+
+  @@index([runId])
+  @@index([parentId])
+  @@map("trace_span")
+}
+
+model TraceEvent {
+  id        String         @id @default(uuid()) @db.Uuid
+  spanId    String         @map("span_id") @db.Uuid
+  type      TraceEventType
+  payload   Json?
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  span TraceSpan @relation(fields: [spanId], references: [id], onDelete: Cascade)
+
+  @@index([spanId])
+  @@map("trace_event")
+}
+
+// ───────────────────────── Prompt (Stage 5) ─────────────────────────
+
+model Prompt {
+  id              String   @id @default(uuid()) @db.Uuid
+  projectId       String   @map("project_id") @db.Uuid
+  name            String
+  description     String?
+  activeVersionId String?  @unique @map("active_version_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  project       Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  activeVersion PromptVersion?  @relation("ActivePromptVersion", fields: [activeVersionId], references: [id], onDelete: SetNull)
+  versions      PromptVersion[] @relation("PromptVersions")
+
+  @@index([projectId])
+  @@map("prompt")
+}
+
+model PromptVersion {
+  id              String   @id @default(uuid()) @db.Uuid
+  promptId        String   @map("prompt_id") @db.Uuid
+  version         Int
+  content         String
+  variablesSchema Json?    @map("variables_schema")
+  status          String   @default("draft") // draft / published / archived
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  prompt          Prompt     @relation("PromptVersions", fields: [promptId], references: [id], onDelete: Cascade)
+  activeForPrompt Prompt?    @relation("ActivePromptVersion")
+  evalRuns        EvalRun[]
+  traceRuns       TraceRun[]
+
+  @@unique([promptId, version])
+  @@map("prompt_version")
+}
+
+// ───────────────────────── Eval (Stage 6) ─────────────────────────
+
+model EvalDataset {
+  id          String   @id @default(uuid()) @db.Uuid
+  projectId   String   @map("project_id") @db.Uuid
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  project Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  cases   EvalCase[]
+  runs    EvalRun[]
+
+  @@index([projectId])
+  @@map("eval_dataset")
+}
+
+model EvalCase {
+  id              String        @id @default(uuid()) @db.Uuid
+  datasetId       String        @map("dataset_id") @db.Uuid
+  input           String
+  expectedOutput  String?       @map("expected_output")
+  assertionType   AssertionType @map("assertion_type")
+  assertionConfig Json?         @map("assertion_config")
+  tags            String[]
+  metadata        Json?
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  dataset EvalDataset  @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  results EvalResult[]
+
+  @@index([datasetId])
+  @@map("eval_case")
+}
+
+model EvalRun {
+  id              String   @id @default(uuid()) @db.Uuid
+  datasetId       String   @map("dataset_id") @db.Uuid
+  promptVersionId String?  @map("prompt_version_id") @db.Uuid
+  modelConfigId   String?  @map("model_config_id") @db.Uuid
+  status          String   @default("pending") // pending / running / completed / failed
+  averageScore    Decimal? @map("average_score") @db.Decimal(6, 3)
+  totalCost       Decimal? @map("total_cost") @db.Decimal(20, 10)
+  durationMs      Int?     @map("duration_ms")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  dataset       EvalDataset    @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  promptVersion PromptVersion? @relation(fields: [promptVersionId], references: [id], onDelete: SetNull)
+  modelConfig   ModelConfig?   @relation(fields: [modelConfigId], references: [id], onDelete: SetNull)
+  results       EvalResult[]
+
+  @@index([datasetId])
+  @@map("eval_run")
+}
+
+model EvalResult {
+  id            String        @id @default(uuid()) @db.Uuid
+  evalRunId     String        @map("eval_run_id") @db.Uuid
+  evalCaseId    String        @map("eval_case_id") @db.Uuid
+  output        String?
+  assertionType AssertionType @map("assertion_type")
+  pass          Boolean?
+  score         Decimal?      @db.Decimal(6, 3)
+  judgeReason   String?       @map("judge_reason")
+  cost          Decimal?      @db.Decimal(20, 10)
+  durationMs    Int?          @map("duration_ms")
+  status        String        @default("pending")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  evalRun  EvalRun  @relation(fields: [evalRunId], references: [id], onDelete: Cascade)
+  evalCase EvalCase @relation(fields: [evalCaseId], references: [id])
+
+  @@unique([evalRunId, evalCaseId])
+  @@map("eval_result")
+}
+
+// ───────────────────────── 聚合 (长期保留) ─────────────────────────
+
+model UsageDaily {
+  id               String   @id @default(uuid()) @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  modelConfigId    String?  @map("model_config_id") @db.Uuid
+  date             DateTime @db.Date
+  requestCount     Int      @default(0) @map("request_count")
+  successCount     Int      @default(0) @map("success_count")
+  failureCount     Int      @default(0) @map("failure_count")
+  promptTokens     BigInt   @default(0) @map("prompt_tokens")
+  completionTokens BigInt   @default(0) @map("completion_tokens")
+  totalCost        Decimal  @default(0) @map("total_cost") @db.Decimal(20, 10)
+  averageLatencyMs Int?     @map("average_latency_ms")
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  modelConfig ModelConfig? @relation(fields: [modelConfigId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, modelConfigId, date])
+  @@index([projectId, date])
+  @@map("usage_daily")
+}

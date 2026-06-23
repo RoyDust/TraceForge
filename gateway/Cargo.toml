@@ -1,0 +1,15 @@
+[package]
+name = "traceforge-gateway"
+version = "0.1.0"
+edition = "2021"
+
+# Rust 数据面。本仓库当前只放最小 sqlx 读写示例 (见 src/main.rs);
+# 完整网关 (axum 代理 + SSE 透传 + Trace 采集) 按 PRD Stage 1+ 展开。
+
+[dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "uuid", "chrono"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"
+dotenvy = "0.15"
+anyhow = "1"

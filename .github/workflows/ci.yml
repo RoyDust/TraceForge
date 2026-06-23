@@ -1,0 +1,44 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  schema-sqlx-sync:
+    name: Prisma schema ↔ Rust sqlx 同步校验
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: traceforge
+          POSTGRES_PASSWORD: traceforge
+          POSTGRES_DB: traceforge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://traceforge:traceforge@localhost:5432/traceforge
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 控制面: 用 schema.prisma (单一事实源) 把表建到 DB。正式部署改用 `prisma migrate deploy`。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npx prisma db push --skip-generate
+
+      # 数据面: sqlx query! 宏在编译期连库校验。Rust SQL 与 Prisma schema 不一致 -> 构建失败。
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gateway
+      - working-directory: gateway
+        run: cargo build

@@ -1,0 +1,12 @@
+# Node
+node_modules/
+.env
+
+# Prisma generated client
+prisma/generated/
+
+# Rust
+gateway/target/
+
+# 如启用 sqlx 离线编译, 把 .sqlx 提交 (不要忽略):
+# gateway/.sqlx/
