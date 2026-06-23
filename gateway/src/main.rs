@@ -1,68 +1,58 @@
-//! 最小 sqlx 读写示例 —— 证明 Rust 数据面与 Prisma 管理的 schema 对得上。
+//! TraceForge Gateway —— Rust 数据面 (axum 常驻服务)。
 //!
-//! `sqlx::query!` 宏在编译期连库校验列名 / 类型, 因此构建需要：
-//!   - 可连的 DATABASE_URL (schema 已由 `prisma db push` / migrate 建好), 或
-//!   - 提交的离线缓存 `cargo sqlx prepare` 生成的 .sqlx/。
-//! schema 漂移会直接让本文件编译失败 —— 这正是双 ORM 的同步闸门。
+//! 当前阶段只提供健康检查; 模型代理 / SSE 透传 / 限流 / Trace 采集见 PRD Stage 1+。
+//! 双 ORM 闸门冒烟测试在 examples/sqlx_smoke.rs (`cargo run --example sqlx_smoke`)。
+
+use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
+use axum::{extract::State, http::StatusCode, routing::get, Router};
 use sqlx::postgres::PgPoolOptions;
-use uuid::Uuid;
+use sqlx::PgPool;
+
+#[derive(Clone)]
+struct AppState {
+    pool: PgPool,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
     let database_url = std::env::var("DATABASE_URL").context("DATABASE_URL 未设置")?;
+
+    // connect_lazy: 不在启动时强连库, 让 /healthz 在 DB 不可用时仍能存活, 由 /readyz 反映真实就绪。
     let pool = PgPoolOptions::new()
         .max_connections(5)
-        .connect(&database_url)
-        .await?;
+        .connect_lazy(&database_url)
+        .context("初始化 PG 连接池失败 (URL 格式?)")?;
 
-    // 数据面只写 Trace 表; project / api_key 等由控制面 (Prisma) 创建。取 seed 出来的 project。
-    let project = sqlx::query!("SELECT id FROM project LIMIT 1")
-        .fetch_optional(&pool)
-        .await?
-        .context("没有 project, 先跑 `npm run db:seed`")?;
+    let app = Router::new()
+        .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
+        .with_state(AppState { pool });
 
-    // 写: TraceRun -> TraceSpan。id 由 Rust 生成; status / started_at 走 DB 默认。
-    let run_id = Uuid::new_v4();
-    sqlx::query!(
-        "INSERT INTO trace_run (id, project_id, name) VALUES ($1, $2, $3)",
-        run_id,
-        project.id,
-        "demo run (from rust sqlx)"
-    )
-    .execute(&pool)
-    .await?;
-
-    // 枚举列: 绑字符串再 ::text::span_type 转换, 避免在最小示例里定义 Rust 枚举。
-    // 需要强类型时给 Rust 枚举加 #[derive(sqlx::Type)] #[sqlx(type_name = "span_type", rename_all = "snake_case")]。
-    let span_id = Uuid::new_v4();
-    sqlx::query!(
-        r#"INSERT INTO trace_span (id, run_id, "type", name) VALUES ($1, $2, $3::text::span_type, $4)"#,
-        span_id,
-        run_id,
-        "llm",
-        "chat.completions"
-    )
-    .execute(&pool)
-    .await?;
-
-    // 读: 回查 run + span 数。enum 用 ::text 取出; AS "x!" 断言非空。
-    let run = sqlx::query!(
-        r#"SELECT name, status::text AS "status!", started_at FROM trace_run WHERE id = $1"#,
-        run_id
-    )
-    .fetch_one(&pool)
-    .await?;
-    let span_count = sqlx::query_scalar!("SELECT count(*) FROM trace_span WHERE run_id = $1", run_id)
-        .fetch_one(&pool)
-        .await?
-        .unwrap_or(0);
-
-    println!(
-        "trace_run {run_id}: name={:?} status={} spans={} at={}",
-        run.name, run.status, span_count, run.started_at
-    );
+    // 监听地址可配 (GATEWAY_ADDR), 默认 0.0.0.0:8080; 端口被占时改它即可。
+    let addr: SocketAddr = std::env::var("GATEWAY_ADDR")
+        .unwrap_or_else(|_| "0.0.0.0:8080".to_string())
+        .parse()
+        .context("GATEWAY_ADDR 格式应为 host:port")?;
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .with_context(|| format!("绑定 {addr} 失败"))?;
+    println!("TraceForge gateway listening on http://{addr}");
+    axum::serve(listener, app).await.context("server 异常退出")?;
     Ok(())
+}
+
+/// 存活探针: 仅表进程在跑, 不查任何依赖。
+async fn healthz() -> &'static str {
+    "ok"
+}
+
+/// 就绪探针: 检查 PostgreSQL 连通 (Redis 检查留待 Stage 1 限流接入后补)。
+async fn readyz(State(state): State<AppState>) -> (StatusCode, &'static str) {
+    match sqlx::query("SELECT 1").execute(&state.pool).await {
+        Ok(_) => (StatusCode::OK, "ready"),
+        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "db unavailable"),
+    }
 }

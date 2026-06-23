@@ -36,9 +36,10 @@ jobs:
       - run: npx prisma db push --skip-generate
 
       # 数据面: sqlx query! 宏在编译期连库校验。Rust SQL 与 Prisma schema 不一致 -> 构建失败。
+      # query! 宏在 examples/sqlx_smoke.rs, 故必须带 --examples 才能触发闸门 (--bins 编主服务)。
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: gateway
       - working-directory: gateway
-        run: cargo build
+        run: cargo build --bins --examples
