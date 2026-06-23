@@ -2,6 +2,12 @@
 node_modules/
 .env
 
+# Next.js
+.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
 # Prisma generated client
 prisma/generated/
 

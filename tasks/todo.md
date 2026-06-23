@@ -22,11 +22,11 @@
   - `GET /readyz`：跑 `SELECT 1`，连通 200 `ready`、否则 503
   - 一次性 sqlx 示例已挪到 `gateway/examples/sqlx_smoke.rs`；CI 改 `cargo build --bins --examples` 保住闸门
   - ✅ 验证通过：服务起在 `:8787`，`curl /healthz`→`ok` 200、`curl /readyz`→`ready` 200（实测）
-- [ ] **2. console — Next.js 最小骨架 + Prisma**
-  - 初始化最小 Next.js app（App Router），复用根 `prisma/schema.prisma` + `@prisma/adapter-pg`
-  - 一个页面调 `prisma.project.findMany()` 列出 seed 项目，证明「控制台能连库」
-  - 注意：runtime 适配器需带 `?schema=traceforge`（同 `seed.ts` 的解析逻辑）
-  - → 验证：`npm run dev` 浏览器能列出 Demo Project
+- [x] **2. console — Next.js 最小骨架 + Prisma**（建在仓库根 = TS 控制面，复用现有 Prisma 配置）✅
+  - Next 16 + React 19，App Router：`app/layout.tsx` + `app/page.tsx`（server component 查库）
+  - `lib/prisma.ts` 单例：PrismaPg 适配器 + 从 `DATABASE_URL` 解析 `?schema=`（同 seed.ts 口径）
+  - `next.config.ts` serverExternalPackages 排除 prisma/pg；`.gitignore` 加 Next 产物
+  - ✅ 验证通过：`npm run dev` → `http://localhost:3000` HTTP 200，页面列出 seed 的 “Demo Project / TraceForge 示例项目”（实测）
 - [ ] **3. README 补「本地原生开发」段**
   - 写明两个进程怎么各自起、端口、依赖的 `.env`
   - → 验证：照 README 从零跑通两个服务
