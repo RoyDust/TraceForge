@@ -61,3 +61,87 @@
 - Redis、Docker 化均按计划延后（Stage 1 / Stage 6）。
 
 下一步候选（未开始）：PRD Stage 1 —— `/v1/chat/completions` 代理 + SSE 流式透传，届时引入 Redis 做限流。
+
+---
+
+# Stage 1 拆解 · Rust 网关 MVP
+
+> 目标（PRD Stage 1 验收）：客户端改 `baseURL` 指向网关，调用效果（含流式）与直连一致；
+> 超 `rpm_limit` / `concurrency_limit` 的请求被拒并返回 OpenAI-compatible `rate_limit_error`；
+> `/readyz` 可判断能否接流量，`/metrics` 暴露运行指标。
+>
+> **范围切割**：Trace 持久化（TraceRun/Span 落库）属 **Stage 2**。本阶段错误只「返回客户端 + 计入 metrics」，**不落库**。
+> 限流改为**进程内存实现**（决策 9），不再依赖 Redis，无外部基础设施阻塞。决策详见 PRD §9。
+
+## 前置（决策已定，见 PRD §9）
+
+- **限流**：内存实现 + trait 抽象（决策 9），Redis 留作后续增强。
+- **真实上游**：DeepSeek（OpenAI 兼容）；key 放 `.env`，经 TS 脚本加密灌库（决策 10、11）。
+- **测试夹具**：自写 mock OpenAI-compatible 上游，造首 chunk 前失败 / 流中途断 / 超时 / usage chunk（决策 10）。
+
+## 步骤 0 · 前置 setup
+
+- [ ] **0a. mock 上游**：最小 OpenAI-compatible 上游（可配流式/非流式、注入 usage chunk、首 chunk 前失败、流中途断、超时），放仓库当测试夹具
+- [ ] **0b. DeepSeek key 灌库**：TS 脚本用 `MASTER_ENCRYPTION_KEY` 加密 DeepSeek key 写入 `model_provider.api_key_encrypted`（格式 `base64(nonce‖密文‖tag)`，决策 11）；并配好 DeepSeek 的 provider / model 行
+
+## 计划（每步 → 验证；尽量互相解耦）
+
+- [ ] **1. 路由骨架 + 请求体解析**
+  - 加 `reqwest`（rustls）依赖；`POST /v1/chat/completions` 路由先返回占位
+  - 解析并只取 `model`（路由）、`stream`（响应处理）、`messages`（后续 preview/估算）；**其余字段保留原始 body 不动**
+  - → 验证：`curl` 命中路由；能从 body 正确读出 `model` / `stream`
+- [ ] **2. Provider 解析 + Key 解密（AES-256-GCM，§3.2）**
+  - `model` → 查 `ModelConfig` + `ModelProvider`（PG）得 `base_url` + `api_key_encrypted`
+  - crypto util：`MASTER_ENCRYPTION_KEY`（env）解密，密钥/明文只在内存，不进日志
+  - → 验证：单测 加密↔解密 round-trip 通过；seed/自测 provider 能解析出 base_url + 明文 key（日志不含明文）
+- [ ] **3. 非流式代理转发（happy path，先不鉴权不限流）**
+  - 原始 body **整体透传**上游 `{base_url}/v1/chat/completions`，响应原样回传；只注入 Authorization
+  - → 验证：对 mock 上游，非流式响应与直连一致（状态码/体一致）
+- [ ] **4. SSE 流式透传（核心难点）**
+  - `stream=true`：边收边转 SSE chunk，**首 chunk 不被缓冲**、不阻塞；正确透传 `[DONE]`
+  - → 验证：流式响应与直连一致；首 token 能即时到达客户端（非整体缓冲后吐出）
+- [ ] **5. 客户端断开 → 取消上游**
+  - 检测客户端断连，`abort` 上游请求；（trace 标记 `cancelled` 留 Stage 2）
+  - → 验证：客户端中途断开后，上游连接被取消（mock 上游观测到 abort）
+- [ ] **6. API Key 校验（内存 TTL 缓存 + miss 读 PG）**
+  - 取 `Authorization: Bearer`，按 `key_hash` 查 `ApiKey`，校验 `scope` 含 `gateway`、`status`/`expires_at`/`revoked_at`
+  - 内存 TTL 缓存，miss 再读 PG；撤销后随 TTL 失效
+  - → 验证：有效 key 放行；无效 / 撤销 / 无 `gateway` scope → `invalid_api_key` / `revoked_api_key`（401，OpenAI-compatible）
+- [ ] **7. OpenAI-compatible 错误响应统一（§3.4）**
+  - 统一错误信封 `{error:{type,code,message}}`；对内 `error_code` 分类，对外不泄露上游原始细节
+  - 覆盖：鉴权 / 上游（`upstream_timeout`/`upstream_error`/`provider_*`）/ 流式（`stream_interrupted`/`stream_timeout`/`client_cancelled`）
+  - → 验证：各类故障（mock 制造）返回规范结构与正确 code；客户端看不到上游内部报错
+- [ ] **8. 内存 fixed-window RPM 限流（trait 抽象，决策 9）**
+  - 限流器抽象成 trait；内存实现按分钟窗口对 `api_key_id` 计数，超 `rpm_limit` 拒
+  - → 验证：超 `rpm_limit` 返回 `rate_limit_error` / code `rate_limited`；跨分钟窗口重置
+- [ ] **9. 内存并发限流 + 流式占用（trait 抽象，决策 9）**
+  - 内存计数器：请求始 +1、结束/失败/断开 -1，用 RAII guard 确保释放防泄漏
+  - 流式请求占用并发直到 `stream_end`/`stream_error`/`cancelled`
+  - → 验证：超 `concurrency_limit` → `concurrency_limited`；长流式正确占用与释放；异常路径不漏计数
+- [ ] **10. 首 chunk 前 fallback（SSE fallback 边界）**
+  - 按 `ModelConfig.fallback_model_id` 链，**首 chunk 前**失败（连接/鉴权/超时）切下一个；**首 chunk 后不切**
+  - → 验证：首 chunk 前上游失败→切备用成功；首 chunk 后失败只记 `stream_error`/`stream_timeout`，不切
+- [ ] **11. `/metrics`（Prometheus，§2.5）**
+  - 暴露 `request_total`、`request_duration_ms`、`first_token_latency_ms`、`inflight_requests`、`rate_limited_total`、`upstream_error_total`、`stream_error_total`（`trace_queue_depth`/`trace_write_failed_total` 留 Stage 2）
+  - → 验证：`curl /metrics` 返回 Prometheus 文本格式，发请求后计数变化
+- [ ] **12. `/readyz` 补配置检查（§2.5；无 Redis，决策 9）**
+  - 现仅探 PG，扩展为校验关键配置（`MASTER_ENCRYPTION_KEY` 等）存在；本阶段无 Redis 需探
+  - → 验证：缺关键配置时 `/readyz` 返 503
+
+## 范围边界（Stage 1 不做）
+
+- 不做 Trace 落库（TraceRun/Span 持久化）→ Stage 2
+- 不解析 / 不特别支持 `tools`、`response_format`、multimodal、`/v1/responses`、embeddings、batch（请求体仍原样透传）
+- 不做 sliding window / token bucket（先 fixed window）
+- 不做 Gemini / Claude native adapter（仅 OpenAI-compatible）
+- Console 侧不动（鉴权只认 project API Key，不走 NextAuth）
+
+## 风险
+
+- **SSE 流式是真难点**：tokio stream + 背压 + 不破坏流地边转边记；步骤 4/5/10 预留学习时间。
+- **并发计数泄漏**：内存计数器在异常 / 断开路径上必须用 RAII guard 确保释放（崩溃则随进程重置）。
+- **验收依赖测试上游**：mock 上游要能造「首 chunk 前失败 / 首 chunk 后中断 / 超时 / 流式 usage chunk」等场景。
+
+## Review（实施后补）
+
+_待实施完成后在此记录实际结果与偏差。_

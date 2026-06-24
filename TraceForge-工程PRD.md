@@ -118,6 +118,8 @@ Rust Gateway 必须暴露基础运行健康信号，支撑 Docker 部署、线�
 
 归因能力来自两条设计：`error_code` 的分类维度（见 §3.4）给出「失败类型」，`Span.type` + 父子层级给出「失败位置」，二者交叉即根因责任域。这是区别于「只展示 trace」的关键。
 
+> ⚠️ **已修订（见 §9.2）**：责任域收敛为 5 个 + 「网关拒绝」、**砍掉 Prompt**，并给出 `(span.type × error_code) → 责任域` 映射表；第 2 步**去掉 critical path**，只做失败 / 最慢 / 最贵的扁平染色。
+
 ## 3. 核心数据模型
 
 | 实体 | 关键字段 | 说明 |
@@ -153,6 +155,8 @@ Rust Gateway 必须暴露基础运行健康信号，支撑 Docker 部署、线�
 - key rotation 第一版只支持手动替换，不做自动轮换。
 
 ### 3.3 限流策略
+
+> ⚠️ **已修订（见 §9.3 决策 9）**：MVP 用**进程内存**实现限流（限流器抽象成 trait），**不用 Redis**；下文 Redis 方案作为后续增强的目标形态保留。
 
 - RPM 限流使用 Redis fixed window：`rate:{api_key_id}:{yyyyMMddHHmm}`，每次请求 `INCR`，首次创建设置 60 秒 TTL，超过 `rpm_limit` 返回 `rate_limited`。
 - 并发限流使用 Redis counter：`concurrent:{api_key_id}`，请求开始时 `INCR`，请求结束 / 失败 / 客户端断开时 `DECR`；给该 key 设较短 TTL（如 60 秒）并在请求 / 流式活跃期定期心跳续期，进程崩溃后计数在约一个 TTL 内自愈、长流也不会被误判释放，避免计数泄漏永久占满并发额度。
@@ -300,3 +304,47 @@ Prompt 实体 + 版本快照；版本 diff 视图；调用时关联 prompt 版�
 - 项目维度成本/延迟/失败率 Dashboard；Prompt 版本管理 + Eval 回归评测
 - Docker + Nginx + GitHub Actions 自建服务器部署，公网持续可访问
 ```
+
+## 9. 决策修订（grill 确认）
+
+> 本节是对前文的**修订层**（关系同 §0 对全量 PRD 的精修）。**与前文冲突处，以本节为准。**
+> 总立场：**作品集 / 面试优先**——把两块做深、其余诚实最小实现。
+
+### 9.1 立场与重点
+
+- **决策 1 · 作品集 / 面试优先**：两块做到生产级深度，其余功能跑通即可、边缘场景明确标注「已知简化」。解释了为什么 schema 是生产级口径、但部分边缘会被有意从简。
+- **决策 2 · 要做深的两块**：① **Rust SSE 流式代理 + 不阻塞采集**；② **TraceRun/Span 嵌套建模 + 失败归因**。成本核算 / Eval / Prompt 版本走诚实最小实现。
+
+### 9.2 Trace 建模与归因（影响 §2.6、§3）
+
+- **决策 3 · Run/Span/Event 边界**：一次普通网关调用 = **1 个 TraceRun + 1 个 llm TraceSpan**；Span 是**逻辑步骤**而非物理 attempt。fallback **不新建 Span**，只在该 Span 上记一条 `fallback_triggered` 的 TraceEvent，Span 最终 `model/provider` 记成功的那个。术语见 [`CONTEXT.md`](CONTEXT.md)。
+- **决策 4 · 责任域收敛为 5 个 + 网关拒绝（修订 §2.6）**：失败责任域 = `模型 / 网络 / 限流 / 工具 / 业务`，外加「网关拒绝（请求未达模型）」。**砍掉「Prompt」**——Prompt 质量问题表现为输出差、不抛错，属 Eval 时段而非失败归因。责任域由下表 `(span.type × error_code)` 派生：
+
+  | span.type / 场景 | error_code | 责任域 |
+  |---|---|---|
+  | llm | `upstream_error` / `provider_rate_limited` / `provider_auth_failed` / `fallback_failed` | 模型 |
+  | llm | `upstream_timeout` / `stream_interrupted` / `stream_timeout` | 网络 |
+  | 网关层（任意 span 前） | `rate_limited` / `concurrency_limited` | 限流 |
+  | 网关鉴权 | `invalid_api_key` / `revoked_api_key` | 网关拒绝 |
+  | tool | tool span 失败 | 工具 |
+  | workflow / db / review | 对应 span 失败 / `client_cancelled` | 业务 |
+
+- **决策 5 · 砍掉 critical path（修订 §2.6 第 2 步）**：瀑布图第 2 步只做**扁平染色**——失败（红）/ 最慢（单 Span max latency）/ 最贵（单 Span max cost），均 O(n) 取极值，不做树路径算法。critical path 延迟瓶颈分析 → 后续增强（§9.5）。
+
+### 9.3 架构与数据面（影响 §2.1–2.2、§3.2–3.3）
+
+- **决策 6 · Rust 写所有 Trace，Next.js 对 Trace 只读**：网关自动 Span 与 SDK 上报 Span 走**同一条写库管线、同一套脱敏 / 截断 / 成本逻辑**；`/api/traces/*` 由 Rust 托管。Next.js 只写控制类实体（Project / Key / Provider / Prompt / Eval），**不写 Trace**。避免双实现漂移。
+- **决策 7 · 采集尽力而为、绝不阻塞主路径**：有界 channel，主路径 `try_send`；**队列满 → 整条丢弃 + 计数**（不做按事件优先级分级丢弃）；**worker 写库失败 → 重试 N 次 → dead-letter**（MVP 用日志 / 一张简单表，不引消息队列），计 `trace_write_failed_total`。转发请求**永不**因 Trace 写入而回压。
+- **决策 9 · 限流用内存实现 + trait，Redis 降为可选增强（修订 §3.3）**：单实例 demo 下 RPM / 并发 / Key 缓存用**进程内存**即可，算法与 Redis 版一致，只是不跨实例。限流器抽象成 trait，Redis 实现留作后续增强。**偏离 PRD 原「用 Redis」**，理由：限流不在要做深的两块内，且本机无 Docker。
+- **决策 11 · Provider key：TS 加密 / Rust 解密**：AES-256-GCM，`MASTER_ENCRYPTION_KEY`（32B，env），存储格式 `base64( nonce(12B) ‖ ciphertext ‖ tag(16B) )`。**加密在 TS 控制面（创建 / 替换 key 时），解密在 Rust 数据面（调用时）**，两边对齐同一方案。Stage 1 控制台未就绪，先用一个 TS 脚本把 key 加密灌库当测试数据。
+
+### 9.4 流式 token 与测试上游（影响 §2.2、Stage 1–2）
+
+- **决策 8 · 流式 token：注入 + 按需剥离**：转发上游时注入 `stream_options.include_usage=true` 拿真实用量；**若客户端自己没要 usage，则把这个 usage chunk 从转发给客户端的流里剥掉**（保证「与直连一致」）；拿不到 provider usage 才用本地 `tiktoken-rs` 估算并标 `usage_source=estimated`。非 OpenAI 的 compatible provider 估算**不保证精确**，老实标 `estimated`。
+- **决策 10 · 测试上游**：真实上游用 **DeepSeek**（OpenAI 兼容）；另**自写一个 mock OpenAI-compatible 上游**放仓库，用来造首 chunk 前失败 / 流中途断 / 超时 / usage chunk 等真实 API 造不出的异常，跑确定性验证。
+
+### 9.5 后续增强 backlog（明确推迟，非 MVP）
+
+- **critical path 延迟瓶颈分析**（决策 5 推迟）：在 Span 树上算决定总耗时的根→叶链路。
+- **Trace 队列分级丢弃**（决策 7 推迟）：队列满时按事件优先级丢弃（先丢 chunk_count 等低价值 Event，保 Run 级 + 错误 Span）。
+- **Redis 分布式限流**（决策 9 推迟）：补 trait 的 Redis 实现，拿到「跨实例一致限流」面试点。
