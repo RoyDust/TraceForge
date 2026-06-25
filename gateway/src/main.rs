@@ -4,6 +4,8 @@
 //! SSE 流式 / 限流 / 鉴权 / Trace 采集见 PRD Stage 1+。
 //! 双 ORM 闸门冒烟测试在 examples/sqlx_smoke.rs。
 
+mod trace;
+
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering::Relaxed};
@@ -33,6 +35,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 struct AuthedKey {
     id: Uuid,
+    project_id: Uuid,
     rpm_limit: Option<i32>,
     concurrency_limit: Option<i32>,
 }
@@ -107,6 +110,8 @@ struct Metrics {
     request_duration_ms_count: AtomicU64,
     first_token_ms_sum: AtomicU64,
     first_token_ms_count: AtomicU64,
+    // Trace 采集 (Stage 2): 队列深度 gauge; 丢弃/写失败计数见 T6。
+    trace_queue_depth: AtomicI64,
 }
 impl Metrics {
     fn render(&self) -> String {
@@ -155,6 +160,7 @@ struct AppState {
     auth_cache: Arc<Mutex<HashMap<String, (AuthedKey, Instant)>>>,
     limiter: Arc<dyn RateLimiter>,
     metrics: Arc<Metrics>,
+    trace: trace::TraceWriter,
 }
 
 #[tokio::main]
@@ -174,6 +180,9 @@ async fn main() -> Result<()> {
         .build()
         .context("构建 HTTP 客户端失败")?;
 
+    let metrics_state = Arc::new(Metrics::default());
+    let trace_writer = trace::spawn(pool.clone(), metrics_state.clone());
+
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
@@ -185,7 +194,8 @@ async fn main() -> Result<()> {
             master_key,
             auth_cache: Arc::new(Mutex::new(HashMap::new())),
             limiter: Arc::new(InMemoryLimiter::default()),
-            metrics: Arc::new(Metrics::default()),
+            metrics: metrics_state,
+            trace: trace_writer,
         });
 
     let addr: SocketAddr = std::env::var("GATEWAY_ADDR")
@@ -271,7 +281,7 @@ async fn authenticate(st: &AppState, headers: &HeaderMap) -> Result<AuthedKey, R
     }
 
     let row = sqlx::query!(
-        r#"SELECT id, scope::text[] as "scope!", status, expires_at, revoked_at, rpm_limit, concurrency_limit
+        r#"SELECT id, project_id, scope::text[] as "scope!", status, expires_at, revoked_at, rpm_limit, concurrency_limit
            FROM api_key WHERE key_hash = $1 LIMIT 1"#,
         key_hash
     )
@@ -298,13 +308,14 @@ async fn authenticate(st: &AppState, headers: &HeaderMap) -> Result<AuthedKey, R
         return Err(err(StatusCode::UNAUTHORIZED, "invalid_request_error", "invalid_api_key", "API key 无 gateway 权限"));
     }
 
-    let ak = AuthedKey { id: row.id, rpm_limit: row.rpm_limit, concurrency_limit: row.concurrency_limit };
+    let ak = AuthedKey { id: row.id, project_id: row.project_id, rpm_limit: row.rpm_limit, concurrency_limit: row.concurrency_limit };
     st.auth_cache.lock().unwrap().insert(key_hash, (ak.clone(), Instant::now()));
     Ok(ak)
 }
 
 /// 代理: 鉴权 -> 解析 model -> fallback 链 -> 解密 key -> 不缓冲透传上游。
 async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
+    let started_at = Utc::now().naive_utc(); // Trace 落库用墙钟时间
     st.metrics.request_total.fetch_add(1, Relaxed);
     st.metrics.inflight.fetch_add(1, Relaxed);
     // req_guard: drop 时 inflight-- 并记总耗时。成功则 move 进响应流 (流结束才结算), 否则随早退 drop。
@@ -342,6 +353,8 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
         Some(m) => m,
         None => return err(StatusCode::BAD_REQUEST, "invalid_request_error", "model_required", "缺少 model 字段"),
     };
+    let is_stream = parsed.get("stream").and_then(Value::as_bool).unwrap_or(false);
+    let input_text = trace::extract_input(&parsed);
 
     // 解析 fallback 链: 主 model + 顺着 fallback_model_id 串起来 (S6)。
     let chain = match resolve_chain(&st.pool, model).await {
@@ -370,8 +383,47 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
 
         match st.http.post(&url).bearer_auth(key).header(header::CONTENT_TYPE, "application/json").body(body_bytes).send().await {
             // 2xx/4xx: 提交并透传 (4xx 是请求问题, fallback 无济于事); 首 chunk 前不再切。
-            // conc_guard / req_guard move 进响应流, 流结束/断开才释放与结算。
-            Ok(resp) if !resp.status().is_server_error() => return proxy_response(resp, conc_guard, req_guard),
+            Ok(resp) if !resp.status().is_server_error() => {
+                // 流式: 不缓冲透传 (Trace tap 见 T2); conc_guard/req_guard move 进响应流, 流结束/断开才释放与结算。
+                if is_stream {
+                    return proxy_response(resp, conc_guard, req_guard);
+                }
+                // 非流式: 缓冲整体 (单条 completion 体积小, 不增加客户端等待), 解析输出落 Trace, 原样回传。
+                let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+                let content_type = resp.headers().get(header::CONTENT_TYPE).cloned()
+                    .unwrap_or_else(|| header::HeaderValue::from_static("application/json"));
+                let resp_body = match resp.bytes().await {
+                    Ok(b) => b,
+                    // 已提交后上游读取失败: 无法再 fallback, 记 upstream_error。
+                    Err(_) => { st.metrics.upstream_error_total.fetch_add(1, Relaxed); last_status = StatusCode::BAD_GATEWAY; last_code = "upstream_error"; break; }
+                };
+                let resp_json: Value = serde_json::from_slice(&resp_body).unwrap_or(Value::Null);
+                let (job_status, error_code) = if status.is_success() {
+                    ("success", None)
+                } else {
+                    ("failed", Some("upstream_error".to_string()))
+                };
+                st.trace.submit(trace::TraceJob {
+                    project_id: authed.project_id,
+                    run_id: Uuid::new_v4(),
+                    span_id: Uuid::new_v4(),
+                    model: hop.model_name.clone(),
+                    provider: hop.provider_name.clone(),
+                    status: job_status,
+                    error_code,
+                    error: None,
+                    input_text: input_text.clone(),
+                    output_text: trace::extract_output_nonstream(&resp_json),
+                    prompt_tokens: None,
+                    completion_tokens: None,
+                    usage_source: None,
+                    started_at,
+                    ended_at: Utc::now().naive_utc(),
+                    has_span: true,
+                });
+                // conc_guard / req_guard 随函数返回 drop: 释放并发 (S5)、结算耗时 (S7)。
+                return Response::builder().status(status).header(header::CONTENT_TYPE, content_type).body(Body::from(resp_body)).unwrap();
+            }
             // 5xx: 首 chunk 前的上游错误, 尝试下一个 fallback。
             Ok(_) => { st.metrics.upstream_error_total.fetch_add(1, Relaxed); last_status = StatusCode::BAD_GATEWAY; last_code = "upstream_error"; }
             Err(e) if e.is_timeout() => { st.metrics.upstream_error_total.fetch_add(1, Relaxed); last_status = StatusCode::GATEWAY_TIMEOUT; last_code = "upstream_timeout"; }
@@ -391,6 +443,7 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
 struct Hop {
     id: Uuid,
     model_name: String,
+    provider_name: String,
     base_url: String,
     api_key_encrypted: Option<String>,
     fallback_model_id: Option<Uuid>,
@@ -400,7 +453,7 @@ struct Hop {
 async fn resolve_chain(pool: &PgPool, model: &str) -> Result<Vec<Hop>, sqlx::Error> {
     let row = sqlx::query!(
         r#"SELECT mc.id as "id!", mc.model_name as "model_name!", mc.fallback_model_id as "fallback_model_id?",
-                  p.base_url as "base_url!", p.api_key_encrypted as "api_key_encrypted?"
+                  p.name as "provider_name!", p.base_url as "base_url!", p.api_key_encrypted as "api_key_encrypted?"
            FROM model_config mc JOIN model_provider p ON p.id = mc.provider_id
            WHERE mc.model_name = $1 AND mc.status = 'active' LIMIT 1"#,
         model
@@ -410,7 +463,7 @@ async fn resolve_chain(pool: &PgPool, model: &str) -> Result<Vec<Hop>, sqlx::Err
 
     let mut chain: Vec<Hop> = Vec::new();
     match row {
-        Some(r) => chain.push(Hop { id: r.id, model_name: r.model_name, base_url: r.base_url, api_key_encrypted: r.api_key_encrypted, fallback_model_id: r.fallback_model_id }),
+        Some(r) => chain.push(Hop { id: r.id, model_name: r.model_name, provider_name: r.provider_name, base_url: r.base_url, api_key_encrypted: r.api_key_encrypted, fallback_model_id: r.fallback_model_id }),
         None => return Ok(chain),
     }
 
@@ -420,7 +473,7 @@ async fn resolve_chain(pool: &PgPool, model: &str) -> Result<Vec<Hop>, sqlx::Err
         }
         let next = sqlx::query!(
             r#"SELECT mc.id as "id!", mc.model_name as "model_name!", mc.fallback_model_id as "fallback_model_id?",
-                      p.base_url as "base_url!", p.api_key_encrypted as "api_key_encrypted?"
+                      p.name as "provider_name!", p.base_url as "base_url!", p.api_key_encrypted as "api_key_encrypted?"
                FROM model_config mc JOIN model_provider p ON p.id = mc.provider_id
                WHERE mc.id = $1 AND mc.status = 'active' LIMIT 1"#,
             fid
@@ -428,7 +481,7 @@ async fn resolve_chain(pool: &PgPool, model: &str) -> Result<Vec<Hop>, sqlx::Err
         .fetch_optional(pool)
         .await?;
         match next {
-            Some(r) => chain.push(Hop { id: r.id, model_name: r.model_name, base_url: r.base_url, api_key_encrypted: r.api_key_encrypted, fallback_model_id: r.fallback_model_id }),
+            Some(r) => chain.push(Hop { id: r.id, model_name: r.model_name, provider_name: r.provider_name, base_url: r.base_url, api_key_encrypted: r.api_key_encrypted, fallback_model_id: r.fallback_model_id }),
             None => break,
         }
     }

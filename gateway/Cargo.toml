@@ -7,7 +7,7 @@ edition = "2021"
 # examples/sqlx_smoke.rs 作双 ORM 编译期闸门; 代理转发 + SSE 透传 + 限流 + Trace 采集按 PRD Stage 1+ 展开。
 
 [dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync"] }
 axum = "0.8"
 sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "uuid", "chrono"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
@@ -22,3 +22,4 @@ uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
 dotenvy = "0.15"
 anyhow = "1"
+regex = "1"
