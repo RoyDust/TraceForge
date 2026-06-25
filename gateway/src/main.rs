@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering::Relaxed};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -93,6 +94,58 @@ impl RateLimiter for InMemoryLimiter {
     }
 }
 
+// ───────────── 运行指标 (S7): 原子计数, Prometheus 文本格式 ─────────────
+
+#[derive(Default)]
+struct Metrics {
+    request_total: AtomicU64,
+    inflight: AtomicI64,
+    rate_limited_total: AtomicU64,
+    upstream_error_total: AtomicU64,
+    stream_error_total: AtomicU64,
+    request_duration_ms_sum: AtomicU64,
+    request_duration_ms_count: AtomicU64,
+    first_token_ms_sum: AtomicU64,
+    first_token_ms_count: AtomicU64,
+}
+impl Metrics {
+    fn render(&self) -> String {
+        let g = |a: &AtomicU64| a.load(Relaxed);
+        format!(
+            "# TYPE traceforge_request_total counter\ntraceforge_request_total {}\n\
+             # TYPE traceforge_inflight_requests gauge\ntraceforge_inflight_requests {}\n\
+             # TYPE traceforge_rate_limited_total counter\ntraceforge_rate_limited_total {}\n\
+             # TYPE traceforge_upstream_error_total counter\ntraceforge_upstream_error_total {}\n\
+             # TYPE traceforge_stream_error_total counter\ntraceforge_stream_error_total {}\n\
+             # TYPE traceforge_request_duration_ms summary\ntraceforge_request_duration_ms_sum {}\ntraceforge_request_duration_ms_count {}\n\
+             # TYPE traceforge_first_token_latency_ms summary\ntraceforge_first_token_latency_ms_sum {}\ntraceforge_first_token_latency_ms_count {}\n",
+            g(&self.request_total),
+            self.inflight.load(Relaxed),
+            g(&self.rate_limited_total),
+            g(&self.upstream_error_total),
+            g(&self.stream_error_total),
+            g(&self.request_duration_ms_sum),
+            g(&self.request_duration_ms_count),
+            g(&self.first_token_ms_sum),
+            g(&self.first_token_ms_count),
+        )
+    }
+}
+
+/// 请求级 RAII: drop 时 inflight-- 并记录总耗时。move 进响应流, 故流结束才结算。
+struct ReqGuard {
+    metrics: Arc<Metrics>,
+    start: Instant,
+}
+impl Drop for ReqGuard {
+    fn drop(&mut self) {
+        self.metrics.inflight.fetch_sub(1, Relaxed);
+        let ms = self.start.elapsed().as_millis() as u64;
+        self.metrics.request_duration_ms_sum.fetch_add(ms, Relaxed);
+        self.metrics.request_duration_ms_count.fetch_add(1, Relaxed);
+    }
+}
+
 #[derive(Clone)]
 struct AppState {
     pool: PgPool,
@@ -101,6 +154,7 @@ struct AppState {
     // key_hash -> (鉴权结果, 缓存时刻); 内存 TTL 缓存, 撤销随 TTL 失效。
     auth_cache: Arc<Mutex<HashMap<String, (AuthedKey, Instant)>>>,
     limiter: Arc<dyn RateLimiter>,
+    metrics: Arc<Metrics>,
 }
 
 #[tokio::main]
@@ -123,6 +177,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
+        .route("/metrics", get(metrics))
         .route("/v1/chat/completions", post(chat_completions))
         .with_state(AppState {
             pool,
@@ -130,6 +185,7 @@ async fn main() -> Result<()> {
             master_key,
             auth_cache: Arc::new(Mutex::new(HashMap::new())),
             limiter: Arc::new(InMemoryLimiter::default()),
+            metrics: Arc::new(Metrics::default()),
         });
 
     let addr: SocketAddr = std::env::var("GATEWAY_ADDR")
@@ -149,12 +205,24 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
-/// 就绪探针: 检查 PostgreSQL 连通 (Redis 已弃用, 见 PRD §9 决策 9; 配置校验留后续步骤)。
+/// 就绪探针: 校验关键配置存在 + PostgreSQL 连通 (无 Redis, 见 PRD §9 决策 9)。
 async fn readyz(State(state): State<AppState>) -> (StatusCode, &'static str) {
+    if state.master_key.is_empty() {
+        return (StatusCode::SERVICE_UNAVAILABLE, "config missing: MASTER_ENCRYPTION_KEY");
+    }
     match sqlx::query("SELECT 1").execute(&state.pool).await {
         Ok(_) => (StatusCode::OK, "ready"),
         Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "db unavailable"),
     }
+}
+
+/// 运行指标 (Prometheus 文本格式)。
+async fn metrics(State(state): State<AppState>) -> Response {
+    (
+        [(header::CONTENT_TYPE, "text/plain; version=0.0.4")],
+        state.metrics.render(),
+    )
+        .into_response()
 }
 
 /// OpenAI 兼容错误信封 (对外不泄露上游原始细节)。
@@ -237,6 +305,11 @@ async fn authenticate(st: &AppState, headers: &HeaderMap) -> Result<AuthedKey, R
 
 /// 代理: 鉴权 -> 解析 model -> fallback 链 -> 解密 key -> 不缓冲透传上游。
 async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
+    st.metrics.request_total.fetch_add(1, Relaxed);
+    st.metrics.inflight.fetch_add(1, Relaxed);
+    // req_guard: drop 时 inflight-- 并记总耗时。成功则 move 进响应流 (流结束才结算), 否则随早退 drop。
+    let req_guard = ReqGuard { metrics: st.metrics.clone(), start: Instant::now() };
+
     let authed = match authenticate(&st, &headers).await {
         Ok(a) => a,
         Err(resp) => return resp,
@@ -245,6 +318,7 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
     // 限流 (S5): RPM 固定窗口 + 并发占用。limit 为 None 表示不限。
     if let Some(limit) = authed.rpm_limit {
         if st.limiter.check_rpm(authed.id, limit).is_err() {
+            st.metrics.rate_limited_total.fetch_add(1, Relaxed);
             return err(StatusCode::TOO_MANY_REQUESTS, "rate_limit_error", "rate_limited", "超过 RPM 限制");
         }
     }
@@ -252,7 +326,10 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
     let conc_guard = match authed.concurrency_limit {
         Some(limit) => match st.limiter.acquire(authed.id, limit) {
             Ok(g) => Some(g),
-            Err(_) => return err(StatusCode::TOO_MANY_REQUESTS, "rate_limit_error", "concurrency_limited", "超过并发限制"),
+            Err(_) => {
+                st.metrics.rate_limited_total.fetch_add(1, Relaxed);
+                return err(StatusCode::TOO_MANY_REQUESTS, "rate_limit_error", "concurrency_limited", "超过并发限制");
+            }
         },
         None => None,
     };
@@ -293,12 +370,12 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
 
         match st.http.post(&url).bearer_auth(key).header(header::CONTENT_TYPE, "application/json").body(body_bytes).send().await {
             // 2xx/4xx: 提交并透传 (4xx 是请求问题, fallback 无济于事); 首 chunk 前不再切。
-            // 并发 guard move 进响应流, 流结束/断开才释放。
-            Ok(resp) if !resp.status().is_server_error() => return proxy_response(resp, conc_guard),
+            // conc_guard / req_guard move 进响应流, 流结束/断开才释放与结算。
+            Ok(resp) if !resp.status().is_server_error() => return proxy_response(resp, conc_guard, req_guard),
             // 5xx: 首 chunk 前的上游错误, 尝试下一个 fallback。
-            Ok(_) => { last_status = StatusCode::BAD_GATEWAY; last_code = "upstream_error"; }
-            Err(e) if e.is_timeout() => { last_status = StatusCode::GATEWAY_TIMEOUT; last_code = "upstream_timeout"; }
-            Err(_) => { last_status = StatusCode::BAD_GATEWAY; last_code = "upstream_error"; }
+            Ok(_) => { st.metrics.upstream_error_total.fetch_add(1, Relaxed); last_status = StatusCode::BAD_GATEWAY; last_code = "upstream_error"; }
+            Err(e) if e.is_timeout() => { st.metrics.upstream_error_total.fetch_add(1, Relaxed); last_status = StatusCode::GATEWAY_TIMEOUT; last_code = "upstream_timeout"; }
+            Err(_) => { st.metrics.upstream_error_total.fetch_add(1, Relaxed); last_status = StatusCode::BAD_GATEWAY; last_code = "upstream_error"; }
         }
     }
 
@@ -359,19 +436,37 @@ async fn resolve_chain(pool: &PgPool, model: &str) -> Result<Vec<Hop>, sqlx::Err
 }
 
 /// 把上游响应包成不缓冲的流式 Response (S2): 透传 status + content-type, 边收边转。
-/// guard 随流 move, 流结束/客户端断开/出错时一并 drop, 释放并发额度 (S5)。
-fn proxy_response(resp: reqwest::Response, guard: Option<ConcurrencyGuard>) -> Response {
+/// conc_guard + req_guard 随流 move, 流结束/断开/出错时一并 drop (释放并发 S5、结算耗时 S7)。
+/// 首块到达时记 first_token_latency, 上游流出错时累加 stream_error_total (S7)。
+fn proxy_response(resp: reqwest::Response, conc: Option<ConcurrencyGuard>, req: ReqGuard) -> Response {
     let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
     let content_type = resp
         .headers()
         .get(header::CONTENT_TYPE)
         .cloned()
         .unwrap_or_else(|| header::HeaderValue::from_static("application/json"));
-    // unfold 把 guard 带在流的状态里, 流被 drop 时 guard 随之释放。
     let upstream = Box::pin(resp.bytes_stream());
-    let guarded = futures_util::stream::unfold((upstream, guard), |(mut s, guard)| async move {
-        s.next().await.map(|item| (item, (s, guard)))
-    });
+    // 状态携带 conc + req guard (流 drop 时释放) + first 标记。
+    let guarded = futures_util::stream::unfold(
+        (upstream, conc, req, false),
+        |(mut s, conc, req, mut first)| async move {
+            match s.next().await {
+                Some(item) => {
+                    if !first {
+                        first = true;
+                        let ms = req.start.elapsed().as_millis() as u64;
+                        req.metrics.first_token_ms_sum.fetch_add(ms, Relaxed);
+                        req.metrics.first_token_ms_count.fetch_add(1, Relaxed);
+                    }
+                    if item.is_err() {
+                        req.metrics.stream_error_total.fetch_add(1, Relaxed);
+                    }
+                    Some((item, (s, conc, req, first)))
+                }
+                None => None,
+            }
+        },
+    );
     Response::builder()
         .status(status)
         .header(header::CONTENT_TYPE, content_type)
