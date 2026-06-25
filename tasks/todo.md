@@ -165,3 +165,40 @@ Stage 1 全部 8 个竖切片(GitHub issue #1–#8)实现 + 实测 + 提交,均�
 - DeepSeek key 在 .env(gitignore);**需 rotate**(曾贴入对话)。
 
 下一步：Stage 2(Trace 采集落库)——届时 trace_queue_depth / trace_write_failed_total 等补齐。
+
+---
+
+# Stage 2 拆解 · Trace 采集与建模
+
+> 目标(PRD Stage 2)：每次网关调用**异步**生成 `TraceRun + TraceSpan` 落库，**不阻塞主转发**；
+> 记录 model/provider/usage/usage_source/耗时/状态/error_code/错误摘要；流式精确记首 token 延迟/总耗时/chunk 数/最终输出；
+> provider usage 优先，缺失则本地估算并标 `usage_source=estimated`；DB 慢/写失败进 retry/dead-letter，观测失败不影响主调用。
+>
+> **范围**：仅**网关自动采集**，单层 `Run + 1 llm Span`（决策 3）。SDK 手动多层 Span 属 **Stage 2.5**，不在此。
+> **决策依据**：§9 决策 3/6/7/8 + §3.1 脱敏截断 + §3.4 error_code + ModelPricing 成本核算。
+
+## 前置(已定，见 PRD §9)
+
+- Rust 单写所有 Trace，一条管线（决策 6）；Next.js 对 Trace 只读。
+- 采集尽力而为、绝不阻塞；队列满整条丢+计数；写库失败 retry+dead-letter（决策 7）。
+- 流式 `include_usage` 注入+按需剥离+本地估算兜底（决策 8）。
+
+## 执行切片(竖切，详见 GitHub issue)
+
+- **T1** 异步写库管线 + 非流式调用落库（基础 tracer bullet）：有界 channel + async worker；一次非流式调用 → DB 有完整 `TraceRun+llm Span`（含脱敏截断的 input/output preview、status、latency）。
+- **T2** 流式落库 + 细粒度事件：`TraceEvent`(stream_start/first_token/chunk_count/stream_end)；记首 token 延迟、总耗时、chunk 数、拼接最终输出。
+- **T3** provider usage 注入采集 + 估算兜底（决策 8）：注入 `include_usage`、消费末尾 usage chunk、客户端没要则剥离；拿不到用 tiktoken-rs 估算并标 `usage_source`。
+- **T4** 成本核算（ModelPricing）+ usage_source 聚合：按 provider+model+effective_from 选价算 span/run cost；run 级任一 span 为 estimated 即 estimated。
+- **T5** 错误/限流/fallback 落库：失败写 `status=failed`+`error_code`+脱敏摘要；鉴权/限流→TraceRun failed(无上游 span)；fallback_triggered/failed 作 TraceEvent（§3.4）。
+- **T6** 写入可靠性 + 指标：队列满丢弃计数、写失败 retry+dead-letter；补 `trace_queue_depth`/`trace_write_failed_total` 到 /metrics（S7 预留的两项）。
+
+## 范围边界(Stage 2 不做)
+
+- 不做 SDK 手动 Span / 嵌套多层链路 → Stage 2.5
+- 不做 Trace 瀑布图可视化、责任域 UI 归因 → Stage 3（本阶段只把 error_code/分类数据写进库）
+- 不做 Trace 保留/清理定时任务 → 后续
+- 不接 Prompt 版本关联（X-TraceForge-Prompt-Version）→ Stage 5
+
+## Review(实施后补)
+
+_待实施完成后在此记录。_
