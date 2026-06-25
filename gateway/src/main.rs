@@ -156,11 +156,12 @@ async fn chat_completions(State(st): State<AppState>, body: Bytes) -> Response {
                 .get(header::CONTENT_TYPE)
                 .cloned()
                 .unwrap_or_else(|| header::HeaderValue::from_static("application/json"));
-            let bytes = resp.bytes().await.unwrap_or_default();
+            // 边收边转, 不缓冲 (S2): 首 chunk 立即下发; 客户端断开会 drop 此流并 abort 上游 (S3)。
+            // 流式与非流式统一走此路径, content-type 透传上游 (text/event-stream 或 application/json)。
             Response::builder()
                 .status(status)
                 .header(header::CONTENT_TYPE, content_type)
-                .body(Body::from(bytes))
+                .body(Body::from_stream(resp.bytes_stream()))
                 .unwrap()
         }
         Err(e) if e.is_timeout() => err(StatusCode::GATEWAY_TIMEOUT, "api_error", "upstream_timeout", "上游超时"),
