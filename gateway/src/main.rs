@@ -4,30 +4,49 @@
 //! SSE 流式 / 限流 / 鉴权 / Trace 采集见 PRD Stage 1+。
 //! 双 ORM 闸门冒烟测试在 examples/sqlx_smoke.rs。
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use anyhow::{anyhow, Context, Result};
 use axum::body::{Body, Bytes};
 use axum::extract::State;
-use axum::http::{header, StatusCode};
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
+use chrono::Utc;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use uuid::Uuid;
+
+/// 鉴权通过的 key 上下文 (限流 S5 会用到 rpm/concurrency)。
+#[derive(Clone)]
+struct AuthedKey {
+    #[allow(dead_code)]
+    id: Uuid,
+    #[allow(dead_code)]
+    rpm_limit: Option<i32>,
+    #[allow(dead_code)]
+    concurrency_limit: Option<i32>,
+}
+
+const AUTH_TTL: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
 struct AppState {
     pool: PgPool,
     http: reqwest::Client,
     master_key: String, // base64(32B); 解密 provider key 用
+    // key_hash -> (鉴权结果, 缓存时刻); 内存 TTL 缓存, 撤销随 TTL 失效。
+    auth_cache: Arc<Mutex<HashMap<String, (AuthedKey, Instant)>>>,
 }
 
 #[tokio::main]
@@ -51,7 +70,12 @@ async fn main() -> Result<()> {
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/v1/chat/completions", post(chat_completions))
-        .with_state(AppState { pool, http, master_key });
+        .with_state(AppState {
+            pool,
+            http,
+            master_key,
+            auth_cache: Arc::new(Mutex::new(HashMap::new())),
+        });
 
     let addr: SocketAddr = std::env::var("GATEWAY_ADDR")
         .unwrap_or_else(|_| "0.0.0.0:8080".to_string())
@@ -102,8 +126,67 @@ fn decrypt(b64_ciphertext: &str, master_key_b64: &str) -> Result<String> {
     String::from_utf8(plaintext).context("解密结果非 UTF-8")
 }
 
-/// 非流式代理: 解析 model -> 查 provider -> 解密 key -> 原样透传上游 -> 回传 (S1)。
-async fn chat_completions(State(st): State<AppState>, body: Bytes) -> Response {
+/// 校验 project API Key (S4): Bearer -> sha256 -> 内存缓存/查 PG -> 校验 scope/状态/过期。
+async fn authenticate(st: &AppState, headers: &HeaderMap) -> Result<AuthedKey, Response> {
+    let token = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|t| !t.is_empty());
+    let token = match token {
+        Some(t) => t,
+        None => return Err(err(StatusCode::UNAUTHORIZED, "invalid_request_error", "invalid_api_key", "缺少或非法 Authorization")),
+    };
+    let key_hash = hex::encode(Sha256::digest(token.as_bytes()));
+
+    // 命中内存缓存且未过期则直接返回 (撤销随 TTL 失效)。
+    if let Some((ak, at)) = st.auth_cache.lock().unwrap().get(&key_hash) {
+        if at.elapsed() < AUTH_TTL {
+            return Ok(ak.clone());
+        }
+    }
+
+    let row = sqlx::query!(
+        r#"SELECT id, scope::text[] as "scope!", status, expires_at, revoked_at, rpm_limit, concurrency_limit
+           FROM api_key WHERE key_hash = $1 LIMIT 1"#,
+        key_hash
+    )
+    .fetch_optional(&st.pool)
+    .await
+    .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "api_error", "internal_error", "鉴权查询失败"))?;
+
+    let row = match row {
+        Some(r) => r,
+        None => return Err(err(StatusCode::UNAUTHORIZED, "invalid_request_error", "invalid_api_key", "API key 无效")),
+    };
+    if row.revoked_at.is_some() || row.status == "revoked" {
+        return Err(err(StatusCode::UNAUTHORIZED, "invalid_request_error", "revoked_api_key", "API key 已撤销"));
+    }
+    if row.status != "active" {
+        return Err(err(StatusCode::UNAUTHORIZED, "invalid_request_error", "invalid_api_key", "API key 不可用"));
+    }
+    if let Some(exp) = row.expires_at {
+        if exp < Utc::now().naive_utc() {
+            return Err(err(StatusCode::UNAUTHORIZED, "invalid_request_error", "invalid_api_key", "API key 已过期"));
+        }
+    }
+    if !row.scope.iter().any(|s| s == "gateway") {
+        return Err(err(StatusCode::UNAUTHORIZED, "invalid_request_error", "invalid_api_key", "API key 无 gateway 权限"));
+    }
+
+    let ak = AuthedKey { id: row.id, rpm_limit: row.rpm_limit, concurrency_limit: row.concurrency_limit };
+    st.auth_cache.lock().unwrap().insert(key_hash, (ak.clone(), Instant::now()));
+    Ok(ak)
+}
+
+/// 代理: 鉴权 -> 解析 model -> fallback 链 -> 解密 key -> 不缓冲透传上游。
+async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
+    let _authed = match authenticate(&st, &headers).await {
+        Ok(a) => a,
+        Err(resp) => return resp,
+    };
+
     let parsed: Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
         Err(_) => return err(StatusCode::BAD_REQUEST, "invalid_request_error", "invalid_json", "请求体不是合法 JSON"),
