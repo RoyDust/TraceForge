@@ -21,24 +21,77 @@ use axum::{Json, Router};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use chrono::Utc;
+use futures_util::StreamExt;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// 鉴权通过的 key 上下文 (限流 S5 会用到 rpm/concurrency)。
+/// 鉴权通过的 key 上下文。
 #[derive(Clone)]
 struct AuthedKey {
-    #[allow(dead_code)]
     id: Uuid,
-    #[allow(dead_code)]
     rpm_limit: Option<i32>,
-    #[allow(dead_code)]
     concurrency_limit: Option<i32>,
 }
 
 const AUTH_TTL: Duration = Duration::from_secs(30);
+
+// ───────────── 限流 (S5): trait + 内存实现; Redis 留作后续增强 (决策 9) ─────────────
+
+/// 限流器抽象。返回 Err(error_code) 表示拒绝。
+trait RateLimiter: Send + Sync {
+    /// 分钟固定窗口 RPM。
+    fn check_rpm(&self, key_id: Uuid, limit: i32) -> Result<(), &'static str>;
+    /// 占用一个并发额度, 返回 RAII guard (drop 时释放); 超限返回 Err。
+    fn acquire(&self, key_id: Uuid, limit: i32) -> Result<ConcurrencyGuard, &'static str>;
+}
+
+/// 并发额度 RAII guard: drop 时 -1。塞进流式 body 一起 move, 故流结束/断开/出错才释放。
+struct ConcurrencyGuard {
+    counts: Arc<Mutex<HashMap<Uuid, i32>>>,
+    key_id: Uuid,
+}
+impl Drop for ConcurrencyGuard {
+    fn drop(&mut self) {
+        if let Ok(mut m) = self.counts.lock() {
+            if let Some(c) = m.get_mut(&self.key_id) {
+                *c = c.saturating_sub(1);
+            }
+        }
+    }
+}
+
+#[derive(Default)]
+struct InMemoryLimiter {
+    rpm: Mutex<HashMap<Uuid, (i64, i32)>>, // key -> (窗口分钟, 计数)
+    conc: Arc<Mutex<HashMap<Uuid, i32>>>,  // key -> 在途并发
+}
+impl RateLimiter for InMemoryLimiter {
+    fn check_rpm(&self, key_id: Uuid, limit: i32) -> Result<(), &'static str> {
+        let window = Utc::now().timestamp() / 60;
+        let mut m = self.rpm.lock().unwrap();
+        let e = m.entry(key_id).or_insert((window, 0));
+        if e.0 != window {
+            *e = (window, 0); // 跨分钟窗口重置
+        }
+        if e.1 >= limit {
+            return Err("rate_limited");
+        }
+        e.1 += 1;
+        Ok(())
+    }
+    fn acquire(&self, key_id: Uuid, limit: i32) -> Result<ConcurrencyGuard, &'static str> {
+        let mut m = self.conc.lock().unwrap();
+        let c = m.entry(key_id).or_insert(0);
+        if *c >= limit {
+            return Err("concurrency_limited");
+        }
+        *c += 1;
+        Ok(ConcurrencyGuard { counts: self.conc.clone(), key_id })
+    }
+}
 
 #[derive(Clone)]
 struct AppState {
@@ -47,6 +100,7 @@ struct AppState {
     master_key: String, // base64(32B); 解密 provider key 用
     // key_hash -> (鉴权结果, 缓存时刻); 内存 TTL 缓存, 撤销随 TTL 失效。
     auth_cache: Arc<Mutex<HashMap<String, (AuthedKey, Instant)>>>,
+    limiter: Arc<dyn RateLimiter>,
 }
 
 #[tokio::main]
@@ -75,6 +129,7 @@ async fn main() -> Result<()> {
             http,
             master_key,
             auth_cache: Arc::new(Mutex::new(HashMap::new())),
+            limiter: Arc::new(InMemoryLimiter::default()),
         });
 
     let addr: SocketAddr = std::env::var("GATEWAY_ADDR")
@@ -182,9 +237,24 @@ async fn authenticate(st: &AppState, headers: &HeaderMap) -> Result<AuthedKey, R
 
 /// 代理: 鉴权 -> 解析 model -> fallback 链 -> 解密 key -> 不缓冲透传上游。
 async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
-    let _authed = match authenticate(&st, &headers).await {
+    let authed = match authenticate(&st, &headers).await {
         Ok(a) => a,
         Err(resp) => return resp,
+    };
+
+    // 限流 (S5): RPM 固定窗口 + 并发占用。limit 为 None 表示不限。
+    if let Some(limit) = authed.rpm_limit {
+        if st.limiter.check_rpm(authed.id, limit).is_err() {
+            return err(StatusCode::TOO_MANY_REQUESTS, "rate_limit_error", "rate_limited", "超过 RPM 限制");
+        }
+    }
+    // 并发 guard 持有到流结束 (move 进 body); 超限拒绝。
+    let conc_guard = match authed.concurrency_limit {
+        Some(limit) => match st.limiter.acquire(authed.id, limit) {
+            Ok(g) => Some(g),
+            Err(_) => return err(StatusCode::TOO_MANY_REQUESTS, "rate_limit_error", "concurrency_limited", "超过并发限制"),
+        },
+        None => None,
     };
 
     let parsed: Value = match serde_json::from_slice(&body) {
@@ -223,7 +293,8 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
 
         match st.http.post(&url).bearer_auth(key).header(header::CONTENT_TYPE, "application/json").body(body_bytes).send().await {
             // 2xx/4xx: 提交并透传 (4xx 是请求问题, fallback 无济于事); 首 chunk 前不再切。
-            Ok(resp) if !resp.status().is_server_error() => return proxy_response(resp),
+            // 并发 guard move 进响应流, 流结束/断开才释放。
+            Ok(resp) if !resp.status().is_server_error() => return proxy_response(resp, conc_guard),
             // 5xx: 首 chunk 前的上游错误, 尝试下一个 fallback。
             Ok(_) => { last_status = StatusCode::BAD_GATEWAY; last_code = "upstream_error"; }
             Err(e) if e.is_timeout() => { last_status = StatusCode::GATEWAY_TIMEOUT; last_code = "upstream_timeout"; }
@@ -288,16 +359,22 @@ async fn resolve_chain(pool: &PgPool, model: &str) -> Result<Vec<Hop>, sqlx::Err
 }
 
 /// 把上游响应包成不缓冲的流式 Response (S2): 透传 status + content-type, 边收边转。
-fn proxy_response(resp: reqwest::Response) -> Response {
+/// guard 随流 move, 流结束/客户端断开/出错时一并 drop, 释放并发额度 (S5)。
+fn proxy_response(resp: reqwest::Response, guard: Option<ConcurrencyGuard>) -> Response {
     let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
     let content_type = resp
         .headers()
         .get(header::CONTENT_TYPE)
         .cloned()
         .unwrap_or_else(|| header::HeaderValue::from_static("application/json"));
+    // unfold 把 guard 带在流的状态里, 流被 drop 时 guard 随之释放。
+    let upstream = Box::pin(resp.bytes_stream());
+    let guarded = futures_util::stream::unfold((upstream, guard), |(mut s, guard)| async move {
+        s.next().await.map(|item| (item, (s, guard)))
+    });
     Response::builder()
         .status(status)
         .header(header::CONTENT_TYPE, content_type)
-        .body(Body::from_stream(resp.bytes_stream()))
+        .body(Body::from_stream(guarded))
         .unwrap()
 }
