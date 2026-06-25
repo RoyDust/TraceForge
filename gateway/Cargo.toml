@@ -10,6 +10,10 @@ edition = "2021"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
 axum = "0.8"
 sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "uuid", "chrono"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde_json = "1"
+aes-gcm = "0.10"
+base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
 dotenvy = "0.15"
