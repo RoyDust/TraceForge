@@ -21,6 +21,7 @@ use base64::Engine;
 use serde_json::{json, Value};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
+use uuid::Uuid;
 
 #[derive(Clone)]
 struct AppState {
@@ -112,59 +113,108 @@ async fn chat_completions(State(st): State<AppState>, body: Bytes) -> Response {
         None => return err(StatusCode::BAD_REQUEST, "invalid_request_error", "model_required", "缺少 model 字段"),
     };
 
-    // model -> provider (base_url + 加密 key)。
+    // 解析 fallback 链: 主 model + 顺着 fallback_model_id 串起来 (S6)。
+    let chain = match resolve_chain(&st.pool, model).await {
+        Ok(c) if !c.is_empty() => c,
+        Ok(_) => return err(StatusCode::NOT_FOUND, "invalid_request_error", "model_not_found", &format!("未知 model: {model}")),
+        Err(_) => return err(StatusCode::INTERNAL_SERVER_ERROR, "api_error", "internal_error", "解析 provider 失败"),
+    };
+    let has_fallback = chain.len() > 1;
+
+    let mut last_status = StatusCode::BAD_GATEWAY;
+    let mut last_code = "upstream_error";
+    for hop in &chain {
+        let encrypted = match &hop.api_key_encrypted {
+            Some(e) => e,
+            None => { last_status = StatusCode::INTERNAL_SERVER_ERROR; last_code = "provider_not_configured"; continue; }
+        };
+        let key = match decrypt(encrypted, &st.master_key) {
+            Ok(k) => k,
+            Err(_) => { last_status = StatusCode::INTERNAL_SERVER_ERROR; last_code = "internal_error"; continue; }
+        };
+        // 用该 hop 的 model_name 重写 body 的 model 字段 (其余字段不动); 仅注入 Authorization。
+        let mut b = parsed.clone();
+        b["model"] = Value::String(hop.model_name.clone());
+        let body_bytes = serde_json::to_vec(&b).unwrap_or_default();
+        let url = format!("{}/chat/completions", hop.base_url.trim_end_matches('/'));
+
+        match st.http.post(&url).bearer_auth(key).header(header::CONTENT_TYPE, "application/json").body(body_bytes).send().await {
+            // 2xx/4xx: 提交并透传 (4xx 是请求问题, fallback 无济于事); 首 chunk 前不再切。
+            Ok(resp) if !resp.status().is_server_error() => return proxy_response(resp),
+            // 5xx: 首 chunk 前的上游错误, 尝试下一个 fallback。
+            Ok(_) => { last_status = StatusCode::BAD_GATEWAY; last_code = "upstream_error"; }
+            Err(e) if e.is_timeout() => { last_status = StatusCode::GATEWAY_TIMEOUT; last_code = "upstream_timeout"; }
+            Err(_) => { last_status = StatusCode::BAD_GATEWAY; last_code = "upstream_error"; }
+        }
+    }
+
+    // 链路耗尽: 有 fallback 报 fallback_failed, 否则报最后一次错误。
+    if has_fallback {
+        err(StatusCode::BAD_GATEWAY, "api_error", "fallback_failed", "全部 fallback 失败")
+    } else {
+        err(last_status, "api_error", last_code, "上游请求失败")
+    }
+}
+
+/// fallback 链上的一跳: 一个 model + 其 provider 信息。
+struct Hop {
+    id: Uuid,
+    model_name: String,
+    base_url: String,
+    api_key_encrypted: Option<String>,
+    fallback_model_id: Option<Uuid>,
+}
+
+/// 解析 model 名并顺着 fallback_model_id 串成有序链 (深度上限 5, 防环)。
+async fn resolve_chain(pool: &PgPool, model: &str) -> Result<Vec<Hop>, sqlx::Error> {
     let row = sqlx::query!(
-        r#"SELECT p.base_url, p.api_key_encrypted
+        r#"SELECT mc.id as "id!", mc.model_name as "model_name!", mc.fallback_model_id as "fallback_model_id?",
+                  p.base_url as "base_url!", p.api_key_encrypted as "api_key_encrypted?"
            FROM model_config mc JOIN model_provider p ON p.id = mc.provider_id
            WHERE mc.model_name = $1 AND mc.status = 'active' LIMIT 1"#,
         model
     )
-    .fetch_optional(&st.pool)
-    .await;
+    .fetch_optional(pool)
+    .await?;
 
-    let row = match row {
-        Ok(Some(r)) => r,
-        Ok(None) => return err(StatusCode::NOT_FOUND, "invalid_request_error", "model_not_found", &format!("未知 model: {model}")),
-        Err(_) => return err(StatusCode::INTERNAL_SERVER_ERROR, "api_error", "internal_error", "解析 provider 失败"),
-    };
-
-    let encrypted = match row.api_key_encrypted {
-        Some(e) => e,
-        None => return err(StatusCode::INTERNAL_SERVER_ERROR, "api_error", "provider_not_configured", "该 provider 未配置 API key"),
-    };
-    let key = match decrypt(&encrypted, &st.master_key) {
-        Ok(k) => k,
-        Err(_) => return err(StatusCode::INTERNAL_SERVER_ERROR, "api_error", "internal_error", "解密 provider key 失败"),
-    };
-
-    // 原始 body 整体透传, 仅注入 Authorization。
-    let url = format!("{}/chat/completions", row.base_url.trim_end_matches('/'));
-    let upstream = st
-        .http
-        .post(&url)
-        .bearer_auth(key)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(body)
-        .send()
-        .await;
-
-    match upstream {
-        Ok(resp) => {
-            let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-            let content_type = resp
-                .headers()
-                .get(header::CONTENT_TYPE)
-                .cloned()
-                .unwrap_or_else(|| header::HeaderValue::from_static("application/json"));
-            // 边收边转, 不缓冲 (S2): 首 chunk 立即下发; 客户端断开会 drop 此流并 abort 上游 (S3)。
-            // 流式与非流式统一走此路径, content-type 透传上游 (text/event-stream 或 application/json)。
-            Response::builder()
-                .status(status)
-                .header(header::CONTENT_TYPE, content_type)
-                .body(Body::from_stream(resp.bytes_stream()))
-                .unwrap()
-        }
-        Err(e) if e.is_timeout() => err(StatusCode::GATEWAY_TIMEOUT, "api_error", "upstream_timeout", "上游超时"),
-        Err(_) => err(StatusCode::BAD_GATEWAY, "api_error", "upstream_error", "上游请求失败"),
+    let mut chain: Vec<Hop> = Vec::new();
+    match row {
+        Some(r) => chain.push(Hop { id: r.id, model_name: r.model_name, base_url: r.base_url, api_key_encrypted: r.api_key_encrypted, fallback_model_id: r.fallback_model_id }),
+        None => return Ok(chain),
     }
+
+    while let Some(fid) = chain.last().unwrap().fallback_model_id {
+        if chain.len() >= 5 || chain.iter().any(|h| h.id == fid) {
+            break; // 深度上限 / 防环
+        }
+        let next = sqlx::query!(
+            r#"SELECT mc.id as "id!", mc.model_name as "model_name!", mc.fallback_model_id as "fallback_model_id?",
+                      p.base_url as "base_url!", p.api_key_encrypted as "api_key_encrypted?"
+               FROM model_config mc JOIN model_provider p ON p.id = mc.provider_id
+               WHERE mc.id = $1 AND mc.status = 'active' LIMIT 1"#,
+            fid
+        )
+        .fetch_optional(pool)
+        .await?;
+        match next {
+            Some(r) => chain.push(Hop { id: r.id, model_name: r.model_name, base_url: r.base_url, api_key_encrypted: r.api_key_encrypted, fallback_model_id: r.fallback_model_id }),
+            None => break,
+        }
+    }
+    Ok(chain)
+}
+
+/// 把上游响应包成不缓冲的流式 Response (S2): 透传 status + content-type, 边收边转。
+fn proxy_response(resp: reqwest::Response) -> Response {
+    let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let content_type = resp
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .cloned()
+        .unwrap_or_else(|| header::HeaderValue::from_static("application/json"));
+    Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, content_type)
+        .body(Body::from_stream(resp.bytes_stream()))
+        .unwrap()
 }
