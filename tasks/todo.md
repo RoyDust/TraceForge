@@ -142,6 +142,26 @@
 - **并发计数泄漏**：内存计数器在异常 / 断开路径上必须用 RAII guard 确保释放（崩溃则随进程重置）。
 - **验收依赖测试上游**：mock 上游要能造「首 chunk 前失败 / 首 chunk 后中断 / 超时 / 流式 usage chunk」等场景。
 
-## Review（实施后补）
+## Review（已完成）
 
-_待实施完成后在此记录实际结果与偏差。_
+Stage 1 全部 8 个竖切片(GitHub issue #1–#8)实现 + 实测 + 提交,均已 CLOSED：
+
+| issue | 切片 | commit | 验证 |
+|------|------|--------|------|
+| #1 | S0 mock 上游 | — | 非流式/流式/fail_before 三场景 |
+| #2 | S1 非流式代理→DeepSeek | 3c908cb | 真实 DeepSeek 200;TS加密↔Rust解密打通 |
+| #3 | S2 SSE 流式透传 | (后续) | 真实 DeepSeek 逐块 SSE;不缓冲 |
+| #4 | S3 客户端断开取消 | — | mock 观测到上游 abort |
+| #5 | S4 API Key 校验 | — | 无auth/有效/撤销/无scope 四情形 |
+| #6 | S5 内存限流 | — | RPM 5×200+429;并发占满→429→释放后200 |
+| #7 | S6 首 chunk 前 fallback | — | mock-fail→fallback成功;mock-mid→不切 |
+| #8 | S7 /metrics + /readyz | — | 各计数正确;readyz 200 |
+
+最终全量验证：`cargo clippy` 零问题；全栈实跑(valid key→真实 DeepSeek)200；healthz/readyz 200。
+
+偏差与取舍：
+- 限流按决策 9 用内存+trait(非 Redis)。
+- 测试 key/上游配置由 scripts/seed-{deepseek,mock,apikey}.ts 灌入。
+- DeepSeek key 在 .env(gitignore);**需 rotate**(曾贴入对话)。
+
+下一步：Stage 2(Trace 采集落库)——届时 trace_queue_depth / trace_write_failed_total 等补齐。
