@@ -20,7 +20,7 @@ export async function ConsoleShell({ children }: { children: ReactNode }) {
           <Link href="/dashboard">Dashboard</Link>
           <Link href="/traces">TraceRuns</Link>
           <Link href="/prompts">Prompt</Link>
-          <span aria-disabled="true">Eval</span>
+          <Link href="/evals">Eval</Link>
         </nav>
         <div className="sidebar-footer">
           <small>{session.email}</small>

@@ -157,6 +157,11 @@ button,
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .button.secondary,
 .filter-form .button {
   border-color: var(--line-strong);
@@ -603,6 +608,17 @@ tr:last-child td {
   overflow-wrap: anywhere;
   color: var(--accent);
   font-weight: 750;
+}
+
+.eval-result-list {
+  display: grid;
+  gap: 12px;
+}
+
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .stack-form {

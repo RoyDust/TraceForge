@@ -42,15 +42,19 @@
 
 ## 当前状态
 
-早期阶段，骨架先行。已落地：
+当前已完成 Stage 0–6 的本地可验证闭环。已落地：
 
 - ✅ **数据契约**：`prisma/schema.prisma`（15 model + 6 enum，列名 snake_case 对齐 sqlx），通过 `prisma validate`。
 - ✅ **种子数据**：`prisma/seed.ts` 幂等灌入示例项目 / Key / Provider / Model / 定价 / Prompt / 一条 Trace。
 - ✅ **双 ORM 闸门验证**：`gateway/examples/sqlx_smoke.rs`，`query!` 宏编译期连库校验 Rust SQL 与 schema 一致（CI 跑 `cargo build --bins --examples`）。
 - ✅ **gateway 常驻服务**：axum HTTP server，`/healthz`（存活）+ `/readyz`（探 PostgreSQL）。
-- ✅ **console 骨架**：Next.js 16 控制台，连库列出项目（首页）。
+- ✅ **Console + Trace 可视化**：单管理员登录、TraceRun 列表/详情、Span Tree、瀑布图和责任域归因。
+- ✅ **成本 Dashboard**：UsageDaily 聚合、模型/Provider 拆分、限流 / fallback / stream_interrupted 治理面板。
+- ✅ **Prompt 版本管理**：Prompt 列表、版本历史、diff、发布/回滚、TraceRun.prompt_version_id 追溯。
+- ✅ **Eval 回归评测**：EvalDataset / EvalCase / EvalRun / EvalResult 控制台，支持六类断言、人工复核和版本对比报告。
+- ✅ **上线准备包**：Docker Compose、Console/Gateway Dockerfile、Nginx 反代样例、部署 readiness CI 和本地配置校验脚本。
 
-按 PRD 分阶段推进中：Rust 网关 MVP（SSE 透传 + 限流）→ Trace 采集 → 控制台 + 瀑布图 → 成本看板 → Prompt 版本 → Eval。见下方[路线图](#路线图)与 [工程 PRD](TraceForge-工程PRD.md)。
+按 PRD 分阶段推进：Rust 网关 MVP（SSE 透传 + 限流）→ Trace 采集 → 控制台 + 瀑布图 → 成本看板 → Prompt 版本 → Eval。见下方[路线图](#路线图)与 [工程 PRD](TraceForge-工程PRD.md)。
 
 ## 目录
 

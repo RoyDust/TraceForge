@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
-import { compactId, formatDate, formatFullDate, formatNumber } from "@/lib/format";
+import { compactId, formatDate, formatFullDate, formatNumber, formatPercent } from "@/lib/format";
+import { passRate } from "@/lib/eval-runner";
 import { diffLines, diffSummary } from "@/lib/prompt-diff";
 import { prisma } from "@/lib/prisma";
 import { createPromptVersionAction, setActivePromptVersionAction } from "../actions";
@@ -22,6 +23,13 @@ type PromptDetail = Prisma.PromptGetPayload<{
     };
   };
 }>;
+type PromptEvalRun = Prisma.EvalRunGetPayload<{
+  include: {
+    dataset: true;
+    promptVersion: true;
+    results: { select: { pass: true } };
+  };
+}>;
 
 function one(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -36,6 +44,7 @@ export default async function PromptDetailPage({ params, searchParams }: { param
   const { id } = await params;
   const rawParams = await searchParams;
   let prompt: PromptDetail | null = null;
+  let evalRuns: PromptEvalRun[] = [];
   let readError: string | null = null;
 
   try {
@@ -52,6 +61,18 @@ export default async function PromptDetailPage({ params, searchParams }: { param
         },
       },
     });
+    if (prompt) {
+      evalRuns = await prisma.evalRun.findMany({
+        where: { promptVersion: { promptId: prompt.id } },
+        include: {
+          dataset: true,
+          promptVersion: true,
+          results: { select: { pass: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 8,
+      });
+    }
   } catch (error) {
     console.error(error);
     readError = "无法读取 Prompt 详情。请确认数据库连接可用。";
@@ -229,6 +250,48 @@ export default async function PromptDetailPage({ params, searchParams }: { param
                   ))}
                 </div>
               </>
+            )}
+          </section>
+
+          <section className="section-band">
+            <div className="section-heading">
+              <div>
+                <h2>EvalRuns</h2>
+                <p className="muted">PromptVersion 的回归证据，供发布前复核。</p>
+              </div>
+              <span className="badge">{formatNumber(evalRuns.length)}</span>
+            </div>
+            {evalRuns.length === 0 ? (
+              <p className="muted">这个 Prompt 还没有 EvalRun。</p>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Run</th>
+                      <th>Dataset</th>
+                      <th>Version</th>
+                      <th>Pass Rate</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {evalRuns.map((run) => (
+                      <tr key={run.id}>
+                        <td>
+                          <Link className="row-link" href={`/evals/runs/${run.id}`}>
+                            {compactId(run.id)}
+                          </Link>
+                        </td>
+                        <td>{run.dataset.name}</td>
+                        <td>v{run.promptVersion?.version ?? "—"}</td>
+                        <td>{formatPercent(passRate(run.results))}</td>
+                        <td><span className={`badge ${run.status === "needs_review" ? "estimated" : "provider"}`}>{run.status}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </section>
         </section>

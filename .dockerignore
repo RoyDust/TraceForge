@@ -1,0 +1,8 @@
+.git
+.next
+node_modules
+gateway/target
+tmp-*.log
+.env
+gateway/.env
+tsconfig.tsbuildinfo

@@ -1,0 +1,51 @@
+name: Deploy Readiness
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  package-check:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: traceforge
+          POSTGRES_PASSWORD: traceforge
+          POSTGRES_DB: traceforge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://traceforge:traceforge@localhost:5432/traceforge
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD_HASH: plain:stage3-local-admin
+      MASTER_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      TRACEFORGE_EVAL_GATEWAY_URL: http://localhost:8787
+      TRACEFORGE_EVAL_API_KEY: tf-stage6-eval-key
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx prisma db push --skip-generate
+      - run: npx prisma validate
+      - run: npm run db:generate
+      - run: npm run build
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gateway
+      - working-directory: gateway
+        run: cargo test && cargo check --examples
+      - run: node scripts/verify-deploy-config.mjs
