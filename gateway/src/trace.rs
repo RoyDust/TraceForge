@@ -3,15 +3,16 @@
 //! 主转发路径只负责「组装」一次调用的 TraceJob 并 `submit`，落库交给独立 async worker：
 //! 有界 channel + 单写 worker，绝不阻塞主转发 (决策 6/7)。队列满则整条丢弃。
 //!
-//! 当前: T1 非流式落库 (TraceRun + 1 个 llm TraceSpan)。流式细粒度事件 / usage / 成本 / 可靠性
-//! 见后续切片 (T2–T6)。
+//! 当前覆盖 Stage 2: 非流式/流式自动 Trace、usage 采集或估算、成本核算、事件写入与基础可靠性指标。
 
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 
 use chrono::NaiveDateTime;
+use serde_json::Value;
 use sqlx::PgPool;
 use tokio::sync::mpsc;
+use tokio::time::{sleep, Duration};
 use uuid::Uuid;
 
 use crate::Metrics;
@@ -32,7 +33,7 @@ pub struct TraceJob {
     pub provider: String,
     pub status: &'static str,
     pub error_code: Option<String>,
-    pub error: Option<String>, // 脱敏后的错误摘要
+    pub error: Option<String>,      // 脱敏后的错误摘要
     pub input_text: Option<String>, // 完整原文; worker 负责脱敏 + 截断成 preview
     pub output_text: Option<String>,
     pub prompt_tokens: Option<i32>,
@@ -42,6 +43,15 @@ pub struct TraceJob {
     pub ended_at: NaiveDateTime,
     /// false 表示鉴权/限流失败: 只写 TraceRun, 不建上游 LLM Span (§3.4)。
     pub has_span: bool,
+    /// 流式细粒度事件 (stream_start/first_token/chunk_count/stream_end 等); 挂在 llm Span 下。
+    pub events: Vec<EventRec>,
+}
+
+/// 一条 TraceEvent 记录。
+pub struct EventRec {
+    pub typ: &'static str, // trace_event_type 枚举值
+    pub payload: Option<Value>,
+    pub at: NaiveDateTime,
 }
 
 /// Trace 写入句柄: 持有有界 channel 的发送端, 主路径 `submit` 即返回。
@@ -56,8 +66,9 @@ impl TraceWriter {
     pub fn submit(&self, job: TraceJob) {
         if self.tx.try_send(job).is_ok() {
             self.metrics.trace_queue_depth.fetch_add(1, Relaxed);
+        } else {
+            self.metrics.trace_dropped_total.fetch_add(1, Relaxed);
         }
-        // 队列满/worker 退出: 丢弃 (丢弃计数 + 重试/dead-letter 见 T6)。
     }
 }
 
@@ -68,9 +79,27 @@ pub fn spawn(pool: PgPool, metrics: Arc<Metrics>) -> TraceWriter {
     tokio::spawn(async move {
         while let Some(job) = rx.recv().await {
             m.trace_queue_depth.fetch_sub(1, Relaxed);
-            if let Err(e) = write_once(&pool, &job).await {
-                // T6 再补重试 + dead-letter + 失败计数; 当前仅日志, 不影响主转发。
-                eprintln!("[trace] 写库失败 run_id={} err={e}", job.run_id);
+            let mut attempt = 0;
+            loop {
+                match write_once(&pool, &job).await {
+                    Ok(_) => break,
+                    Err(e) if attempt < 2 => {
+                        attempt += 1;
+                        sleep(Duration::from_millis(100 * attempt)).await;
+                        eprintln!(
+                            "[trace] 写库失败, 将重试 run_id={} attempt={} err={e}",
+                            job.run_id, attempt
+                        );
+                    }
+                    Err(e) => {
+                        m.trace_write_failed_total.fetch_add(1, Relaxed);
+                        eprintln!(
+                            "[trace] 写库失败, dead-letter(log) run_id={} err={e}",
+                            job.run_id
+                        );
+                        break;
+                    }
+                }
             }
         }
     });
@@ -82,18 +111,37 @@ async fn write_once(pool: &PgPool, job: &TraceJob) -> Result<(), sqlx::Error> {
     let input_preview = job.input_text.as_deref().map(|t| preview(&sanitize(t)));
     let output_preview = job.output_text.as_deref().map(|t| preview(&sanitize(t)));
     let latency = (job.ended_at - job.started_at).num_milliseconds() as i32;
-    let total_tokens = match (job.prompt_tokens, job.completion_tokens) {
+    let mut prompt_tokens = job.prompt_tokens;
+    let mut completion_tokens = job.completion_tokens;
+    let mut usage_source = job.usage_source;
+
+    if job.has_span && usage_source.is_none() {
+        prompt_tokens = job
+            .input_text
+            .as_deref()
+            .map(|text| estimate_tokens(&job.model, text));
+        completion_tokens = job
+            .output_text
+            .as_deref()
+            .map(|text| estimate_tokens(&job.model, text));
+        if prompt_tokens.is_some() || completion_tokens.is_some() {
+            usage_source = Some("estimated");
+        }
+    }
+
+    let total_tokens = match (prompt_tokens, completion_tokens) {
         (None, None) => None,
         (a, b) => Some(a.unwrap_or(0) + b.unwrap_or(0)),
     };
+    let cost = lookup_cost(pool, job, prompt_tokens, completion_tokens).await?;
 
     let mut tx = pool.begin().await?;
 
     sqlx::query!(
         r#"INSERT INTO trace_run
              (id, project_id, name, status, error_code, input_preview, output_preview,
-              total_tokens, usage_source, latency_ms, started_at, ended_at)
-           VALUES ($1,$2,$3,$4::text::trace_status,$5,$6,$7,$8,$9::text::usage_source,$10,$11,$12)"#,
+              total_tokens, cost, usage_source, latency_ms, started_at, ended_at)
+           VALUES ($1,$2,$3,$4::text::trace_status,$5,$6,$7,$8,($9::float8)::numeric,$10::text::usage_source,$11,$12,$13)"#,
         job.run_id,
         job.project_id,
         job.model,
@@ -102,7 +150,8 @@ async fn write_once(pool: &PgPool, job: &TraceJob) -> Result<(), sqlx::Error> {
         input_preview,
         output_preview,
         total_tokens,
-        job.usage_source,
+        cost,
+        usage_source,
         latency,
         job.started_at,
         job.ended_at,
@@ -115,8 +164,8 @@ async fn write_once(pool: &PgPool, job: &TraceJob) -> Result<(), sqlx::Error> {
             r#"INSERT INTO trace_span
                  (id, run_id, type, name, model, provider, input_preview, output_preview,
                   prompt_tokens, completion_tokens, usage_source, latency_ms, status, error_code, error,
-                  started_at, ended_at)
-               VALUES ($1,$2,'llm',$3,$4,$5,$6,$7,$8,$9,$10::text::usage_source,$11,$12::text::trace_status,$13,$14,$15,$16)"#,
+                  cost, started_at, ended_at)
+               VALUES ($1,$2,'llm',$3,$4,$5,$6,$7,$8,$9,$10::text::usage_source,$11,$12::text::trace_status,$13,$14,($15::float8)::numeric,$16,$17)"#,
             job.span_id,
             job.run_id,
             job.model,
@@ -124,21 +173,64 @@ async fn write_once(pool: &PgPool, job: &TraceJob) -> Result<(), sqlx::Error> {
             job.provider,
             input_preview,
             output_preview,
-            job.prompt_tokens,
-            job.completion_tokens,
-            job.usage_source,
+            prompt_tokens,
+            completion_tokens,
+            usage_source,
             latency,
             job.status,
             job.error_code,
             job.error,
+            cost,
             job.started_at,
             job.ended_at,
         )
         .execute(&mut *tx)
         .await?;
+
+        // TraceEvent 挂在 llm Span 下 (schema 只允许 event→span)。
+        for ev in &job.events {
+            sqlx::query!(
+                r#"INSERT INTO trace_event (id, span_id, type, payload, created_at)
+                   VALUES ($1,$2,$3::text::trace_event_type,$4,$5)"#,
+                Uuid::new_v4(),
+                job.span_id,
+                ev.typ,
+                ev.payload,
+                ev.at,
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
     }
 
     tx.commit().await
+}
+
+async fn lookup_cost(
+    pool: &PgPool,
+    job: &TraceJob,
+    prompt_tokens: Option<i32>,
+    completion_tokens: Option<i32>,
+) -> Result<Option<f64>, sqlx::Error> {
+    let Some(prompt_tokens) = prompt_tokens else {
+        return Ok(None);
+    };
+    let completion_tokens = completion_tokens.unwrap_or(0);
+    let row = sqlx::query!(
+        r#"SELECT input_price::float8 as "input_price!", output_price::float8 as "output_price!"
+           FROM model_pricing
+           WHERE provider = $1 AND model = $2 AND effective_from <= $3
+           ORDER BY effective_from DESC
+           LIMIT 1"#,
+        job.provider,
+        job.model,
+        job.started_at,
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row
+        .map(|r| prompt_tokens as f64 * r.input_price + completion_tokens as f64 * r.output_price))
 }
 
 /// 从请求体提取输入文本 (messages 拼接), 供 preview / token 估算。
@@ -172,6 +264,34 @@ pub fn extract_output_nonstream(resp: &serde_json::Value) -> Option<String> {
         })
         .collect();
     Some(out)
+}
+
+pub fn extract_usage(resp: &serde_json::Value) -> (Option<i32>, Option<i32>) {
+    let usage = match resp.get("usage") {
+        Some(v) => v,
+        None => return (None, None),
+    };
+    let prompt = usage
+        .get("prompt_tokens")
+        .and_then(serde_json::Value::as_i64)
+        .and_then(|v| i32::try_from(v).ok());
+    let completion = usage
+        .get("completion_tokens")
+        .and_then(serde_json::Value::as_i64)
+        .and_then(|v| i32::try_from(v).ok());
+    (prompt, completion)
+}
+
+fn estimate_tokens(model: &str, text: &str) -> i32 {
+    let len = tiktoken_rs::bpe_for_model(model)
+        .unwrap_or_else(|_| tiktoken_rs::cl100k_base_singleton())
+        .encode_ordinary(text)
+        .len();
+    i32::try_from(len).unwrap_or(i32::MAX)
+}
+
+pub fn sanitize_text(s: &str) -> String {
+    sanitize(s)
 }
 
 /// 脱敏: mask 常见密钥/凭据 (§3.1), 避免敏感串进 preview。

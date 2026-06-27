@@ -199,6 +199,186 @@ Stage 1 全部 8 个竖切片(GitHub issue #1–#8)实现 + 实测 + 提交,均�
 - 不做 Trace 保留/清理定时任务 → 后续
 - 不接 Prompt 版本关联（X-TraceForge-Prompt-Version）→ Stage 5
 
-## Review(实施后补)
+## Review（已完成）
 
-_待实施完成后在此记录。_
+Stage 2 全部 6 个竖切片（GitHub issue #9-#14）实现并验证：
+
+| issue | 切片 | 状态 | 验证 |
+|------|------|------|------|
+| #9 | T1 异步写库管线 + 非流式落库 | ✅ 完成 | mock 非流式 → DB 有 TraceRun + llm Span；preview 脱敏 `sk-*` |
+| #10 | T2 流式落库 + 细粒度事件 | ✅ 完成 | stream_start / first_token / chunk_count / stream_end 落库 |
+| #11 | T3 provider usage 注入采集 + 估算兜底 | ✅ 完成 | 默认剥离 usage chunk；客户端要求 usage 时保留；mock-mid 无 usage → tiktoken-rs estimated |
+| #12 | T4 成本核算 + usage_source 聚合 | ✅ 完成 | mock pricing 固定单价下 cost=0.000009 / estimated cost=0.000008 |
+| #13 | T5 错误/限流/fallback 落库 | ✅ 完成 | fallback_triggered、stream_interrupted、rate_limited、revoked_api_key 均落库 |
+| #14 | T6 写入可靠性 + 指标 | ✅ 完成 | 有界 try_send、队列满计数、写失败重试 + dead-letter(log)、metrics 暴露 queue/write_failed/dropped |
+
+实测请求覆盖：
+- 非流式 `mock-ok`：TraceRun/Span success，provider usage + cost。
+- 流式 `mock-ok`（客户端未要 usage）：响应不含 usage 帧，DB 仍记录 provider usage。
+- 流式 `mock-ok`（客户端要 usage）：响应保留 usage 帧。
+- 流式 `mock-fail`：首 chunk 前 fallback 到 `mock-ok`，TraceEvent 有 `fallback_triggered`。
+- 流式 `mock-mid`：首 chunk 后无 `[DONE]`，Span failed + `stream_interrupted`，usage_source=estimated。
+- 第 6 次 valid key 请求：429 `rate_limited`，TraceRun failed 且无上游 Span。
+- revoked key：401 `revoked_api_key`，TraceRun failed 且无上游 Span。
+
+最终验证：
+- `cd gateway && cargo check`
+- `cd gateway && cargo clippy -- -D warnings`
+- `cd gateway && cargo build --bins --examples`
+- `npx prisma validate`
+- `npm run build`
+- `node scripts/verify-trace.mjs`
+
+---
+
+# 继续开发计划 · 基于 Claude 导出与当前仓库（2026-06-27）
+
+## 来源确认
+
+- Claude 导出文件：`C:\Users\Administrator\Downloads\Compressed\data-29e4eed7-51dc-4a55-9949-b36c9de8a9fa-1782495170-17237cdf-batch-0000.zip`
+- 导出内共 5 段对话；没有直接命名为 `TraceForge` 的项目对话。
+- 与本项目方向最相关的是「简历分析和改进建议」：
+  - Claude 建议未来重点做深 **Agent 工程 / Context Engineering / Advanced RAG / Eval / Observability**。
+  - 6 个月路线表里建议做一个贯穿 3-6 月的旗舰 Agent 项目，并从第一天开始埋指标：工具调用成功率、延迟、token 成本、检索质量、对比实验。
+  - 这个方向与当前 TraceForge PRD 的「AI Gateway + Agent Observability + Eval」高度一致，可视为本项目的外部动机来源之一。
+- 「WebRTC 的定义和作用」对话与 TraceForge 不直接相关，只提供了一个可借鉴思路：项目要有可量化指标、对比实验和可演示闭环。
+
+## 当前状态
+
+- 已有文档已把项目定位收敛为：**AI 网关 + Agent 可观测平台**。
+- `tasks/todo.md` 记录 Stage 0 / Stage 1 已完成，下一步进入 Stage 2 Trace 采集。
+- 当前 Stage 2 已收口并通过验证：
+  - `StreamCtx` / `proxy_response` 流式 tee 已完成。
+  - 非流式、流式、usage、成本、失败/限流/fallback、可靠性指标均已落地。
+  - `cargo check`、`cargo clippy -- -D warnings`、`cargo build --bins --examples`、`npx prisma validate`、`npm run build` 均通过。
+
+## 总目标
+
+把 TraceForge 做成一个能用于作品集和面试讲述的生产级最小闭环：
+
+1. 客户端只改 `baseURL`，能通过 Rust 网关调用 OpenAI-compatible 模型。
+2. 非流式与流式请求都能生成完整 `TraceRun + llm TraceSpan + TraceEvent`。
+3. 控制台能筛失败、看链路、定责任域，兑现「一次失败的调用，3 步定位根因」。
+4. Dashboard 能展示 token、成本、失败率、P95 延迟。
+5. 内置一个示例多步 Agent，用 SDK / Trace API 上报 tool / workflow / review span，证明不只是单次 LLM trace。
+
+## P0 · 先恢复可编译状态
+
+- [x] 收口当前半开的流式 Trace tee 改动：
+  - 定义 `StreamCtx`，承载 `TraceWriter`、`project_id`、`model`、`provider`、`input_text`、`started_at`。
+  - 修改 `proxy_response` 签名，让它接收 `StreamCtx`。
+  - 在不破坏 SSE 透传的前提下，把流式结束后的 TraceJob submit 出去。
+- [x] 保持当前语义：流式响应仍边收边转，不整体缓冲后再返回客户端。
+- [x] 验证：
+  - `cd gateway && cargo check`
+  - `cd gateway && cargo clippy`
+
+## Stage 2 · Trace 自动采集落库
+
+- [x] **T1 非流式 Trace 验证**
+  - 确认一次非流式调用能写入 `TraceRun + llm TraceSpan`。
+  - 字段包含：status、model、provider、input/output preview、latency_ms。
+  - 验证：调用 mock/DeepSeek 后运行 `node scripts/verify-trace.mjs`。
+
+- [x] **T2 流式 Trace + 事件**
+  - 记录 `stream_start`、`first_token`、`chunk_count`、`stream_end`。
+  - 首 token 延迟写入 metrics，chunk 数写入 TraceEvent payload。
+  - 上游流中断记录 `stream_error`，客户端断开记录 `stream_cancelled`。
+  - 验证：mock 上游覆盖正常流、首 chunk 后断、客户端中断。
+
+- [x] **T3 usage 采集与估算兜底**
+  - 非流式解析 `usage.prompt_tokens` / `usage.completion_tokens`。
+  - 流式请求注入 `stream_options.include_usage=true`。
+  - 客户端原本没请求 usage 时，剥离末尾 usage chunk，保证透传体验接近直连。
+  - 拿不到 provider usage 时标记 `usage_source=estimated`，估算先用简单近似即可，后续再引入 tokenizer。
+  - 验证：mock usage chunk / 无 usage 两类场景。
+
+- [x] **T4 成本核算**
+  - 按 `ModelPricing(provider, model, effective_from)` 选择有效价格。
+  - 计算 prompt / completion 成本，写入 span/run cost。
+  - run 级 `usage_source`：任一 span 为 estimated 即 estimated。
+  - 验证：固定 token + 固定价格得到确定成本。
+
+- [x] **T5 错误、限流、fallback 落库**
+  - 鉴权失败 / 限流失败：写 failed TraceRun，不创建上游 span。
+  - 上游失败：写 failed llm span + 标准 error_code。
+  - fallback：首 chunk 前切换时写 `fallback_triggered`；全部失败写 `fallback_failed`。
+  - 验证：invalid key、rate limit、mock fail_before、mock mid-stream failure。
+
+- [x] **T6 写入可靠性与指标**
+  - 队列满时丢弃整条 TraceJob，并增加丢弃计数。
+  - 写库失败时重试有限次数；MVP 可先日志 dead-letter + metrics，不引入消息队列。
+  - `/metrics` 补齐 `trace_queue_depth`、`trace_write_failed_total`、`trace_dropped_total`。
+  - 验证：人为断开 DB，确认模型响应不被 Trace 写入拖垮。
+
+## Stage 2.5 · Trace API / Node SDK / 示例 Agent
+
+- [ ] Rust 数据面托管 `/api/traces/*`，只认 project API Key，不走 NextAuth。
+- [ ] 提供最薄 Node SDK：
+  - `startRun`
+  - `startSpan`
+  - `endSpan`
+  - `endRun`
+- [ ] 做一个示例写作 Agent：
+  - 选题 → 抓取资料 → 成文 → 审稿 → 保存草稿。
+  - LLM 调用走网关自动 llm span。
+  - tool / workflow / review 通过 SDK 手动上报。
+- [ ] 验证：一次 Agent 运行在 DB 中形成父子 Span 树。
+
+## Stage 3 · Console 让 Trace 可读
+
+- [ ] Trace 列表页：
+  - 过滤：status、error_code、model、时间范围。
+  - 展示：model/provider、latency、tokens、cost、started_at。
+- [ ] Trace 详情页：
+  - Span 树 / 瀑布图。
+  - 扁平高亮：失败、最慢、最贵。
+  - 展开 span 可看脱敏 input/output preview、error_code、events。
+- [ ] 责任域映射：
+  - 根据 `span.type × error_code` 派生：模型 / 网络 / 限流 / 工具 / 业务 / 网关拒绝。
+- [ ] 验证：用 3 条固定 fixture trace 演示「筛失败 → 看链路 → 定责任域」。
+
+## Stage 4 · 成本与运行 Dashboard
+
+- [ ] 项目维度指标：
+  - request_count、success/failure count、failure rate。
+  - token、cost、P95 latency。
+  - 按 model/provider 维度拆分。
+- [ ] UsageDaily 聚合：
+  - 先用脚本或定时任务从 TraceRun / TraceSpan 聚合。
+  - 后续再考虑更实时的写入路径。
+- [ ] 验证：固定样本聚合结果与数据库明细对得上。
+
+## Stage 5 · Prompt 版本与 Eval（后置，不抢主线）
+
+- [ ] Prompt 版本管理：
+  - 创建版本、diff、回滚。
+  - 调用通过 `X-TraceForge-Prompt-Version` 或 SDK 字段关联版本。
+- [ ] Eval：
+  - Dataset / Case / Run / Result。
+  - 先做 exact_match、contains、regex、json_schema。
+  - LLM judge 和 manual_review 后置。
+- [ ] 验证：改 Prompt → 跑 eval → 看到通过率和失败样本。
+
+## 明确暂不做
+
+- 不扩展 Claude / Gemini native adapter；继续只支持 OpenAI-compatible。
+- 不做完整 OpenAI API parity；`/v1/responses`、embeddings、batch 后置。
+- 不先做 Redis 分布式限流；内存 trait 已足够支撑单实例 demo。
+- 不先做复杂 critical path 算法；Stage 3 只做失败 / 最慢 / 最贵扁平高亮。
+- 不引入新依赖，除非该阶段明确需要并单独记录取舍。
+
+## 建议节奏
+
+- **第 1 周**：P0 + Stage 2 T1/T2，先让非流式和流式都能稳定落 Trace。
+- **第 2 周**：T3/T4/T5/T6，把 usage、成本、错误、fallback、可靠性补齐。
+- **第 3 周**：Stage 2.5，做 Trace API / SDK / 示例 Agent，形成多步 Agent 证据。
+- **第 4 周**：Stage 3，做 Trace 列表与详情页，兑现「3 步定位根因」。
+- **第 5 周**：Stage 4，补 Dashboard 和 UsageDaily 聚合。
+- **第 6 周**：Stage 5 的最小 Prompt / Eval，加部署与演示材料。
+
+## Review
+
+- 已从 Claude 导出中确认：没有直接 TraceForge 对话；相关内容来自职业路线对「Agent 工程、可观测、Eval、旗舰项目」的建议。
+- 已对照当前仓库：PRD、CONTEXT、README、tasks/todo 已经把该方向落成 TraceForge。
+- 已验证当前代码状态：Stage 2 已完成，第一优先级转为 Stage 2.5 Trace API / Node SDK / 示例 Agent。

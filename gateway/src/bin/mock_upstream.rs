@@ -40,7 +40,10 @@ struct Q {
 
 async fn chat(Query(q): Query<Q>, body: Bytes) -> Response {
     let parsed: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
-    let is_stream = parsed.get("stream").and_then(Value::as_bool).unwrap_or(false);
+    let is_stream = parsed
+        .get("stream")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let want_usage = parsed
         .get("stream_options")
         .and_then(|o| o.get("include_usage"))

@@ -57,10 +57,11 @@ async fn main() -> Result<()> {
     )
     .fetch_one(&pool)
     .await?;
-    let span_count = sqlx::query_scalar!("SELECT count(*) FROM trace_span WHERE run_id = $1", run_id)
-        .fetch_one(&pool)
-        .await?
-        .unwrap_or(0);
+    let span_count =
+        sqlx::query_scalar!("SELECT count(*) FROM trace_span WHERE run_id = $1", run_id)
+            .fetch_one(&pool)
+            .await?
+            .unwrap_or(0);
 
     println!(
         "trace_run {run_id}: name={:?} status={} spans={} at={}",

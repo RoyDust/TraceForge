@@ -55,8 +55,29 @@ async function main() {
   await model(ID.fail, "mock-fail", ID.ok); // 首 chunk 前失败 → fallback 到 mock-ok
   await model(ID.mid, "mock-mid", ID.ok); // 首 chunk 后中断 → 不 fallback
 
+  const effectiveFrom = new Date("2026-01-01T00:00:00Z");
+  for (const modelName of ["mock-ok", "mock-slow", "mock-fail", "mock-mid"]) {
+    await prisma.modelPricing.upsert({
+      where: {
+        provider_model_effectiveFrom: {
+          provider: "Mock Upstream",
+          model: modelName,
+          effectiveFrom,
+        },
+      },
+      update: {},
+      create: {
+        provider: "Mock Upstream",
+        model: modelName,
+        inputPrice: "0.00000100",
+        outputPrice: "0.00000200",
+        effectiveFrom,
+      },
+    });
+  }
+
   await prisma.$disconnect();
-  console.log("✅ mock provider/model 已配置: mock-ok / mock-slow / mock-fail(→ok) / mock-mid(→ok)");
+  console.log("✅ mock provider/model/pricing 已配置: mock-ok / mock-slow / mock-fail(→ok) / mock-mid(→ok)");
 }
 
 main().catch((e) => {
