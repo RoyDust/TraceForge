@@ -39,7 +39,8 @@ a {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -120,7 +121,8 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-height: 38px;
   padding: 8px 10px;
@@ -132,6 +134,7 @@ select {
 
 input:focus,
 select:focus,
+textarea:focus,
 button:focus-visible,
 a:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 70%, white);
@@ -271,6 +274,17 @@ button,
 
 .dashboard-filter {
   grid-template-columns: minmax(180px, 1.2fr) repeat(2, minmax(140px, 0.8fr)) auto;
+}
+
+.prompt-filter {
+  grid-template-columns: minmax(220px, 1fr) auto;
+}
+
+.prompt-diff-filter {
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) auto;
+  margin-bottom: 12px;
+  padding: 0;
+  border: 0;
 }
 
 .filter-actions {
@@ -591,6 +605,67 @@ tr:last-child td {
   font-weight: 750;
 }
 
+.stack-form {
+  display: grid;
+  gap: 12px;
+}
+
+.checkbox-row {
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+}
+
+.checkbox-row input {
+  width: auto;
+  min-height: auto;
+}
+
+.prompt-block {
+  margin-top: 16px;
+}
+
+.diff-view {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.diff-line {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.diff-line:last-child {
+  border-bottom: 0;
+}
+
+.diff-line.added {
+  background: color-mix(in srgb, var(--ok) 12%, white);
+}
+
+.diff-line.removed {
+  background: color-mix(in srgb, var(--danger) 10%, white);
+}
+
+.diff-line span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.diff-line code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 pre {
   max-height: 220px;
   overflow: auto;
@@ -693,6 +768,8 @@ pre {
 
   .filter-form,
   .dashboard-filter,
+  .prompt-filter,
+  .prompt-diff-filter,
   .summary-grid,
   .detail-grid,
   .kv-grid,

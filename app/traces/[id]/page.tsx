@@ -21,6 +21,15 @@ export const dynamic = "force-dynamic";
 type TraceRunDetail = Prisma.TraceRunGetPayload<{
   include: {
     project: true;
+    promptVersion: {
+      include: {
+        prompt: {
+          include: {
+            activeVersion: true;
+          };
+        };
+      };
+    };
     spans: {
       include: {
         events: true;
@@ -256,6 +265,15 @@ export default async function TraceDetailPage({ params }: { params: Promise<{ id
       where: { id },
       include: {
         project: true,
+        promptVersion: {
+          include: {
+            prompt: {
+              include: {
+                activeVersion: true,
+              },
+            },
+          },
+        },
         spans: {
           include: {
             events: { orderBy: { createdAt: "asc" } },
@@ -384,6 +402,24 @@ export default async function TraceDetailPage({ params }: { params: Promise<{ id
         </section>
 
         <aside className="section">
+          <section className="section-band">
+            <h2>Prompt Version</h2>
+            {run.promptVersion ? (
+              <div className="meta-stack">
+                <Link className="row-link" href={`/prompts/${run.promptVersion.prompt.id}?compare=${run.promptVersion.version}`}>
+                  {run.promptVersion.prompt.name} · v{run.promptVersion.version}
+                </Link>
+                <span>
+                  <span className={`badge ${run.promptVersion.prompt.activeVersionId === run.promptVersion.id ? "provider" : ""}`}>
+                    {run.promptVersion.prompt.activeVersionId === run.promptVersion.id ? "active" : run.promptVersion.status}
+                  </span>
+                </span>
+                <small className="muted">TraceRun.prompt_version_id = {run.promptVersion.id}</small>
+              </div>
+            ) : (
+              <p className="muted">这个 Run 没有关联 PromptVersion。</p>
+            )}
+          </section>
           <section className="section-band">
             <h2>Waterfall</h2>
             <Waterfall spans={run.spans} slowestId={slowest?.id ?? null} costliestId={costliest?.id ?? null} />
