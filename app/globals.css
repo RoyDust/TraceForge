@@ -269,6 +269,10 @@ button,
   background: var(--panel);
 }
 
+.dashboard-filter {
+  grid-template-columns: minmax(180px, 1.2fr) repeat(2, minmax(140px, 0.8fr)) auto;
+}
+
 .filter-actions {
   display: flex;
   gap: 8px;
@@ -408,6 +412,30 @@ tr:last-child td {
   overflow-wrap: anywhere;
 }
 
+.summary-cell .metric-note {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.dashboard-kpis {
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+}
+
+.section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.section-heading p {
+  margin-bottom: 0;
+}
+
 .detail-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
@@ -515,6 +543,54 @@ tr:last-child td {
   grid-template-columns: 1fr;
 }
 
+.trend-cell {
+  min-width: 140px;
+  display: grid;
+  gap: 6px;
+}
+
+.trend-track {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.trend-bar {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.governance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.governance-grid .section-band {
+  display: grid;
+  gap: 10px;
+}
+
+.metric-large {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.metric-list {
+  display: grid;
+  gap: 8px;
+}
+
+.metric-list a {
+  overflow-wrap: anywhere;
+  color: var(--accent);
+  font-weight: 750;
+}
+
 pre {
   max-height: 220px;
   overflow: auto;
@@ -616,6 +692,7 @@ pre {
   }
 
   .filter-form,
+  .dashboard-filter,
   .summary-grid,
   .detail-grid,
   .kv-grid,
@@ -645,7 +722,8 @@ pre {
   }
 
   .waterfall-row,
-  .event-row {
+  .event-row,
+  .governance-grid {
     grid-template-columns: 1fr;
   }
 }

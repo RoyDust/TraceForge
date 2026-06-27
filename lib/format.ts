@@ -41,6 +41,11 @@ export function formatMoney(value: { toString(): string } | string | number | nu
   return n < 0.0001 ? n.toFixed(8) : n.toFixed(6);
 }
 
+export function formatPercent(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  return `${(value * 100).toFixed(1)}%`;
+}
+
 export function compactId(id: string) {
   return id.slice(0, 8);
 }
