@@ -12,6 +12,7 @@ const ID = {
   slow: "00000000-0000-0000-0000-000000000032",
   fail: "00000000-0000-0000-0000-000000000033",
   mid: "00000000-0000-0000-0000-000000000034",
+  failAlone: "00000000-0000-0000-0000-000000000035",
 };
 
 // 与 Rust 解密对齐: base64( nonce(12) ‖ ct ‖ tag(16) )。
@@ -54,9 +55,10 @@ async function main() {
   await model(ID.slow, "mock-slow");
   await model(ID.fail, "mock-fail", ID.ok); // 首 chunk 前失败 → fallback 到 mock-ok
   await model(ID.mid, "mock-mid", ID.ok); // 首 chunk 后中断 → 不 fallback
+  await model(ID.failAlone, "mock-fail-alone"); // 首 chunk 前失败且不 fallback → 模型责任域样例
 
   const effectiveFrom = new Date("2026-01-01T00:00:00Z");
-  for (const modelName of ["mock-ok", "mock-slow", "mock-fail", "mock-mid"]) {
+  for (const modelName of ["mock-ok", "mock-slow", "mock-fail", "mock-mid", "mock-fail-alone"]) {
     await prisma.modelPricing.upsert({
       where: {
         provider_model_effectiveFrom: {
@@ -77,7 +79,7 @@ async function main() {
   }
 
   await prisma.$disconnect();
-  console.log("✅ mock provider/model/pricing 已配置: mock-ok / mock-slow / mock-fail(→ok) / mock-mid(→ok)");
+  console.log("✅ mock provider/model/pricing 已配置: mock-ok / mock-slow / mock-fail(→ok) / mock-mid(→ok) / mock-fail-alone");
 }
 
 main().catch((e) => {
