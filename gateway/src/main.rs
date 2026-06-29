@@ -17,7 +17,7 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use anyhow::{anyhow, Context, Result};
 use axum::body::{Body, Bytes};
 use axum::extract::State;
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -41,6 +41,7 @@ struct AuthedKey {
 }
 
 const AUTH_TTL: Duration = Duration::from_secs(30);
+const TRACE_RUN_ID_HEADER: &str = "x-traceforge-run-id";
 
 // ───────────── 限流 (S5): trait + 内存实现; Redis 留作后续增强 (决策 9) ─────────────
 
@@ -260,6 +261,53 @@ fn err(status: StatusCode, typ: &str, code: &str, message: &str) -> Response {
         .into_response()
 }
 
+fn with_trace_run_id(mut response: Response, run_id: Uuid) -> Response {
+    if let Ok(value) = HeaderValue::from_str(&run_id.to_string()) {
+        response.headers_mut().insert(TRACE_RUN_ID_HEADER, value);
+    }
+    response
+}
+
+fn parse_trace_run_id(headers: &HeaderMap) -> Result<Option<Uuid>, Response> {
+    let Some(value) = headers.get(TRACE_RUN_ID_HEADER) else {
+        return Ok(None);
+    };
+    let raw = value.to_str().map_err(|_| {
+        err(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_error",
+            "trace_run_id_invalid",
+            "X-TraceForge-Run-Id 必须是合法 UUID",
+        )
+    })?;
+    Uuid::parse_str(raw.trim()).map(Some).map_err(|_| {
+        err(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_error",
+            "trace_run_id_invalid",
+            "X-TraceForge-Run-Id 必须是合法 UUID",
+        )
+    })
+}
+
+async fn ensure_trace_run_id_available(st: &AppState, run_id: Uuid) -> Result<(), Response> {
+    match trace::run_exists(&st.pool, run_id).await {
+        Ok(false) => Ok(()),
+        Ok(true) => Err(err(
+            StatusCode::CONFLICT,
+            "invalid_request_error",
+            "trace_run_id_conflict",
+            "X-TraceForge-Run-Id 已存在",
+        )),
+        Err(_) => Err(err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "api_error",
+            "internal_error",
+            "TraceRun id 检查失败",
+        )),
+    }
+}
+
 struct AuthError {
     status: StatusCode,
     typ: &'static str,
@@ -277,13 +325,14 @@ impl AuthError {
 fn submit_rejected_trace(
     trace: &trace::TraceWriter,
     project_id: Uuid,
+    run_id: Uuid,
     error_code: &'static str,
     input_text: Option<String>,
     started_at: NaiveDateTime,
 ) {
     trace.submit(trace::TraceJob {
         project_id,
-        run_id: Uuid::new_v4(),
+        run_id,
         span_id: Uuid::new_v4(),
         model: "gateway_rejected".to_string(),
         provider: "gateway".to_string(),
@@ -483,11 +532,29 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
         Ok(a) => a,
         Err(auth_err) => {
             if let Some(project_id) = auth_err.project_id {
-                submit_rejected_trace(&st.trace, project_id, auth_err.code, None, started_at);
+                submit_rejected_trace(
+                    &st.trace,
+                    project_id,
+                    Uuid::new_v4(),
+                    auth_err.code,
+                    None,
+                    started_at,
+                );
             }
             return auth_err.response();
         }
     };
+
+    let predeclared_run_id = match parse_trace_run_id(&headers) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    if let Some(run_id) = predeclared_run_id {
+        if let Err(response) = ensure_trace_run_id_available(&st, run_id).await {
+            return response;
+        }
+    }
+    let run_id = predeclared_run_id.unwrap_or_else(Uuid::new_v4);
 
     let parsed: Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
@@ -526,15 +593,19 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
         submit_rejected_trace(
             &st.trace,
             authed.project_id,
+            run_id,
             code,
             input_text.clone(),
             started_at,
         );
-        err(
-            StatusCode::TOO_MANY_REQUESTS,
-            "rate_limit_error",
-            code,
-            message,
+        with_trace_run_id(
+            err(
+                StatusCode::TOO_MANY_REQUESTS,
+                "rate_limit_error",
+                code,
+                message,
+            ),
+            run_id,
         )
     };
 
@@ -578,6 +649,38 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
         }
     };
     let has_fallback = chain.len() > 1;
+
+    match trace::begin_run(
+        &st.pool,
+        &trace::TraceBegin {
+            project_id: authed.project_id,
+            run_id,
+            name: model.to_string(),
+            input_text: input_text.clone(),
+            started_at,
+        },
+    )
+    .await
+    {
+        Ok(()) => {}
+        Err(trace::BeginRunError::Conflict) => {
+            return err(
+                StatusCode::CONFLICT,
+                "invalid_request_error",
+                "trace_run_id_conflict",
+                "X-TraceForge-Run-Id 已存在",
+            )
+        }
+        Err(trace::BeginRunError::Sql(error)) => {
+            eprintln!("[trace] 创建 running TraceRun 失败 run_id={run_id} err={error}");
+            return err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "api_error",
+                "internal_error",
+                "创建 TraceRun 失败",
+            );
+        }
+    }
 
     let mut last_status = StatusCode::BAD_GATEWAY;
     let mut last_code = "upstream_error";
@@ -626,6 +729,7 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
                     let ctx = StreamCtx {
                         trace: st.trace.clone(),
                         project_id: authed.project_id,
+                        run_id,
                         model: hop.model_name.clone(),
                         provider: hop.provider_name.clone(),
                         input_text: input_text.clone(),
@@ -672,7 +776,7 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
                 };
                 st.trace.submit(trace::TraceJob {
                     project_id: authed.project_id,
-                    run_id: Uuid::new_v4(),
+                    run_id,
                     span_id: Uuid::new_v4(),
                     model: hop.model_name.clone(),
                     provider: hop.provider_name.clone(),
@@ -693,6 +797,7 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
                 return Response::builder()
                     .status(status)
                     .header(header::CONTENT_TYPE, content_type)
+                    .header(TRACE_RUN_ID_HEADER, run_id.to_string())
                     .body(Body::from(resp_body))
                     .unwrap();
             }
@@ -748,7 +853,7 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
     let failed_hop = chain.last().expect("chain checked non-empty");
     st.trace.submit(trace::TraceJob {
         project_id: authed.project_id,
-        run_id: Uuid::new_v4(),
+        run_id,
         span_id: Uuid::new_v4(),
         model: failed_hop.model_name.clone(),
         provider: failed_hop.provider_name.clone(),
@@ -766,14 +871,20 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
         events: attempt_events,
     });
     if has_fallback {
-        err(
-            StatusCode::BAD_GATEWAY,
-            "api_error",
-            "fallback_failed",
-            "全部 fallback 失败",
+        with_trace_run_id(
+            err(
+                StatusCode::BAD_GATEWAY,
+                "api_error",
+                "fallback_failed",
+                "全部 fallback 失败",
+            ),
+            run_id,
         )
     } else {
-        err(last_status, "api_error", last_code, "上游请求失败")
+        with_trace_run_id(
+            err(last_status, "api_error", last_code, "上游请求失败"),
+            run_id,
+        )
     }
 }
 
@@ -843,6 +954,7 @@ async fn resolve_chain(pool: &PgPool, model: &str) -> Result<Vec<Hop>, sqlx::Err
 struct StreamCtx {
     trace: trace::TraceWriter,
     project_id: Uuid,
+    run_id: Uuid,
     model: String,
     provider: String,
     input_text: Option<String>,
@@ -1016,7 +1128,7 @@ impl StreamTrace {
         let events = std::mem::take(&mut self.ctx.events);
         self.ctx.trace.submit(trace::TraceJob {
             project_id: self.ctx.project_id,
-            run_id: Uuid::new_v4(),
+            run_id: self.ctx.run_id,
             span_id: Uuid::new_v4(),
             model: self.ctx.model.clone(),
             provider: self.ctx.provider.clone(),
@@ -1058,6 +1170,7 @@ fn proxy_response(
         .get(header::CONTENT_TYPE)
         .cloned()
         .unwrap_or_else(|| header::HeaderValue::from_static("application/json"));
+    let run_id = ctx.run_id;
     let upstream = Box::pin(resp.bytes_stream());
     // 状态携带 conc + req guard + trace accumulator; 流 drop 时释放并补 cancelled Trace。
     let guarded = futures_util::stream::unfold(
@@ -1103,6 +1216,7 @@ fn proxy_response(
     Response::builder()
         .status(status)
         .header(header::CONTENT_TYPE, content_type)
+        .header(TRACE_RUN_ID_HEADER, run_id.to_string())
         .body(Body::from_stream(guarded))
         .unwrap()
 }

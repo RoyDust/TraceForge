@@ -47,6 +47,27 @@ pub struct TraceJob {
     pub events: Vec<EventRec>,
 }
 
+/// Gateway 接受请求后立即创建的 running Run。
+pub struct TraceBegin {
+    pub project_id: Uuid,
+    pub run_id: Uuid,
+    pub name: String,
+    pub input_text: Option<String>,
+    pub started_at: NaiveDateTime,
+}
+
+#[derive(Debug)]
+pub enum BeginRunError {
+    Conflict,
+    Sql(sqlx::Error),
+}
+
+impl From<sqlx::Error> for BeginRunError {
+    fn from(error: sqlx::Error) -> Self {
+        BeginRunError::Sql(error)
+    }
+}
+
 /// 一条 TraceEvent 记录。
 pub struct EventRec {
     pub typ: &'static str, // trace_event_type 枚举值
@@ -106,6 +127,44 @@ pub fn spawn(pool: PgPool, metrics: Arc<Metrics>) -> TraceWriter {
     TraceWriter { tx, metrics }
 }
 
+/// 同步保留 TraceRun id, 让详情页能作为 in-flight 调用的落地点。
+pub async fn begin_run(pool: &PgPool, begin: &TraceBegin) -> Result<(), BeginRunError> {
+    if run_exists(pool, begin.run_id).await? {
+        return Err(BeginRunError::Conflict);
+    }
+
+    let input_preview = begin.input_text.as_deref().map(|t| preview(&sanitize(t)));
+    let result = sqlx::query!(
+        r#"INSERT INTO trace_run
+             (id, project_id, name, status, input_preview, started_at)
+           VALUES ($1,$2,$3,'running'::trace_status,$4,$5)"#,
+        begin.run_id,
+        begin.project_id,
+        begin.name,
+        input_preview,
+        begin.started_at,
+    )
+    .execute(pool)
+    .await;
+
+    match result {
+        Ok(_) => Ok(()),
+        Err(error) if is_unique_violation(&error) => Err(BeginRunError::Conflict),
+        Err(error) => Err(BeginRunError::Sql(error)),
+    }
+}
+
+pub async fn run_exists(pool: &PgPool, run_id: Uuid) -> Result<bool, sqlx::Error> {
+    let row = sqlx::query!("SELECT id FROM trace_run WHERE id = $1 LIMIT 1", run_id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row.is_some())
+}
+
+fn is_unique_violation(error: &sqlx::Error) -> bool {
+    matches!(error, sqlx::Error::Database(db_error) if db_error.is_unique_violation())
+}
+
 /// 落库一次 Trace: TraceRun (+ 可选 llm TraceSpan), 事务保证原子。
 async fn write_once(pool: &PgPool, job: &TraceJob) -> Result<(), sqlx::Error> {
     let input_preview = job.input_text.as_deref().map(|t| preview(&sanitize(t)));
@@ -141,7 +200,18 @@ async fn write_once(pool: &PgPool, job: &TraceJob) -> Result<(), sqlx::Error> {
         r#"INSERT INTO trace_run
              (id, project_id, name, status, error_code, input_preview, output_preview,
               total_tokens, cost, usage_source, latency_ms, started_at, ended_at)
-           VALUES ($1,$2,$3,$4::text::trace_status,$5,$6,$7,$8,($9::float8)::numeric,$10::text::usage_source,$11,$12,$13)"#,
+           VALUES ($1,$2,$3,$4::text::trace_status,$5,$6,$7,$8,($9::float8)::numeric,$10::text::usage_source,$11,$12,$13)
+           ON CONFLICT (id) DO UPDATE SET
+             name = EXCLUDED.name,
+             status = EXCLUDED.status,
+             error_code = EXCLUDED.error_code,
+             input_preview = EXCLUDED.input_preview,
+             output_preview = EXCLUDED.output_preview,
+             total_tokens = EXCLUDED.total_tokens,
+             cost = EXCLUDED.cost,
+             usage_source = EXCLUDED.usage_source,
+             latency_ms = EXCLUDED.latency_ms,
+             ended_at = EXCLUDED.ended_at"#,
         job.run_id,
         job.project_id,
         job.model,

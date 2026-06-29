@@ -18,6 +18,7 @@ export async function ConsoleShell({ children }: { children: ReactNode }) {
         </Link>
         <nav className="nav-list" aria-label="主导航">
           <Link href="/dashboard">Dashboard</Link>
+          <Link href="/chat">Chat</Link>
           <Link href="/traces">TraceRuns</Link>
           <Link href="/prompts">Prompt</Link>
           <Link href="/evals">Eval</Link>

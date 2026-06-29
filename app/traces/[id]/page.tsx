@@ -15,6 +15,7 @@ import {
   responsibilityFor,
   responsibilityForRun,
 } from "@/lib/responsibility";
+import { TraceAutoRefresh } from "./auto-refresh";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,7 @@ type TraceRunDetail = Prisma.TraceRunGetPayload<{
 
 type SpanWithEvents = TraceRunDetail["spans"][number];
 type SpanNode = SpanWithEvents & { children: SpanNode[] };
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 const DOMAIN_CLASS: Record<ResponsibilityDomain, string> = {
   模型: "model",
@@ -92,6 +94,10 @@ function buildTree(spans: SpanWithEvents[]) {
   }
 
   return roots;
+}
+
+function one(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 function SpanCard({
@@ -255,8 +261,16 @@ function Waterfall({
   );
 }
 
-export default async function TraceDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function TraceDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: SearchParams;
+}) {
   const { id } = await params;
+  const rawParams = await searchParams;
+  const pending = one(rawParams.pending) === "1";
   let run: TraceRunDetail | null = null;
   let readError: string | null = null;
 
@@ -302,6 +316,24 @@ export default async function TraceDetailPage({ params }: { params: Promise<{ id
   }
 
   if (!run) {
+    if (pending) {
+      return (
+        <main>
+          <Link className="back-link" href="/traces">
+            返回 TraceRuns
+          </Link>
+          <section className="empty-state">
+            <p className="eyebrow">TraceRun Pending</p>
+            <h1>正在等待 Gateway 接受请求</h1>
+            <p className="muted">
+              Console 已经预声明 Run ID：{id}。如果 Gateway 接受请求，这里会自动切换到 running TraceRun。
+            </p>
+            <TraceAutoRefresh timeoutMs={20000} />
+          </section>
+        </main>
+      );
+    }
+
     return (
       <main>
         <Link className="back-link" href="/traces">
@@ -316,6 +348,7 @@ export default async function TraceDetailPage({ params }: { params: Promise<{ id
   }
 
   const domain = responsibilityForRun(run);
+  const shouldRefresh = run.status === TraceStatus.running;
   const tree = buildTree(run.spans);
   const slowest = run.spans.reduce<SpanWithEvents | null>(
     (current, span) => (!current || duration(span) > duration(current) ? span : current),
@@ -341,6 +374,14 @@ export default async function TraceDetailPage({ params }: { params: Promise<{ id
         </div>
         <span className={badgeClass(run.status)}>{run.status}</span>
       </header>
+
+      {shouldRefresh ? (
+        <section className="section-band domain-note">
+          <h2>调用仍在进行</h2>
+          <p className="muted">TraceRun 还没有进入终态，页面会自动刷新直到成功、失败或取消。</p>
+          <TraceAutoRefresh />
+        </section>
+      ) : null}
 
       <section className="summary-grid" aria-label="Run 摘要">
         <div className="summary-cell">
@@ -389,8 +430,10 @@ export default async function TraceDetailPage({ params }: { params: Promise<{ id
           <h2>Span Tree</h2>
           {tree.length === 0 ? (
             <div className="empty-state">
-              <h3>这个 Run 没有上游 Span</h3>
-              <p className="muted">这通常是鉴权、撤销 Key 或限流等网关层拒绝。</p>
+              <h3>{run.status === TraceStatus.running ? "等待上游 Span 写入" : "这个 Run 没有上游 Span"}</h3>
+              <p className="muted">
+                {run.status === TraceStatus.running ? "Gateway 已接受请求，完成后会补齐 Span 和输出证据。" : "这通常是鉴权、撤销 Key 或限流等网关层拒绝。"}
+              </p>
             </div>
           ) : (
             <div className="span-list">

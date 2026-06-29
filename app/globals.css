@@ -360,6 +360,11 @@ tr:last-child td {
   color: var(--ok);
 }
 
+.badge.running {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+  color: var(--accent);
+}
+
 .badge.failed,
 .badge.model,
 .badge.gateway {
@@ -537,6 +542,10 @@ tr:last-child td {
   gap: 8px;
 }
 
+.kv-grid.single-column {
+  grid-template-columns: 1fr;
+}
+
 .kv {
   min-width: 0;
   padding: 9px;
@@ -624,6 +633,30 @@ tr:last-child td {
 .stack-form {
   display: grid;
   gap: 12px;
+}
+
+.chat-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.35fr);
+}
+
+.chat-form {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.chat-editor {
+  min-height: 320px;
+  resize: vertical;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.live-refresh {
+  margin-bottom: 0;
+  font-weight: 650;
 }
 
 .checkbox-row {
