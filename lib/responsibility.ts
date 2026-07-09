@@ -56,15 +56,15 @@ export function responsibilityForRun(run: RunForResponsibility) {
 export function responsibilityDescription(domain: ResponsibilityDomain | null) {
   switch (domain) {
     case "模型":
-      return "上游模型服务、Provider 鉴权、Provider 限流或 fallback 链路失败。";
+      return "上游模型服务、供应商鉴权、供应商限流或备用切换链路失败。";
     case "网络":
       return "连接、超时或流式传输中断导致响应不完整。";
     case "限流":
       return "TraceForge 网关在请求到达模型前执行了 RPM 或并发限制。";
     case "工具":
-      return "Agent 工具 Span 失败，需要检查工具调用入参、外部服务或返回结构。";
+      return "智能体工具调用跨度失败，需要检查工具调用入参、外部服务或返回结构。";
     case "业务":
-      return "业务工作流、数据库、人工审核或客户端取消导致 Run 没有正常完成。";
+      return "业务工作流、数据库、人工审核或客户端取消导致运行没有正常完成。";
     case "网关拒绝":
       return "请求未进入模型层，通常是 API Key 无效、撤销或缺少权限。";
     default:

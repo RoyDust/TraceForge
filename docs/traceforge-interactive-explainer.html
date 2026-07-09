@@ -1,0 +1,1379 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TraceForge 互动讲解</title>
+    <style>
+      :root {
+        --paper: #f4f1ea;
+        --paper-strong: #ebe3d6;
+        --ink: #18211d;
+        --muted: #68726b;
+        --line: #cfc5b4;
+        --line-strong: #9d907b;
+        --green: #22624f;
+        --green-deep: #123e33;
+        --blue: #2d5275;
+        --red: #93413a;
+        --yellow: #9b6d22;
+        --violet: #644e7a;
+        --white: #fffaf0;
+        --shadow: 0 18px 42px rgba(24, 33, 29, 0.12);
+        --radius: 8px;
+        --font-body: "Aptos", "Segoe UI Variable", "Segoe UI", sans-serif;
+        --font-display: Georgia, "Times New Roman", serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        min-width: 320px;
+        scroll-behavior: smooth;
+        background:
+          linear-gradient(90deg, rgba(24, 33, 29, 0.055) 1px, transparent 1px),
+          linear-gradient(180deg, rgba(24, 33, 29, 0.045) 1px, transparent 1px),
+          var(--paper);
+        background-size: 34px 34px;
+        color: var(--ink);
+      }
+
+      body {
+        margin: 0;
+        font-family: var(--font-body);
+        letter-spacing: 0;
+      }
+
+      button,
+      select {
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      code {
+        padding: 1px 5px;
+        border: 1px solid color-mix(in srgb, var(--green) 18%, var(--line));
+        border-radius: 4px;
+        background: color-mix(in srgb, var(--green) 8%, var(--white));
+        font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+        font-size: 0.92em;
+      }
+
+      .shell {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 276px minmax(0, 1fr);
+      }
+
+      .rail {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        gap: 22px;
+        padding: 24px 20px;
+        border-right: 1px solid var(--line);
+        background: color-mix(in srgb, var(--paper-strong) 88%, white);
+      }
+
+      .brand {
+        display: grid;
+        gap: 8px;
+      }
+
+      .brand-mark {
+        width: 46px;
+        height: 46px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--ink);
+        border-radius: var(--radius);
+        background: var(--ink);
+        color: var(--paper);
+        font-weight: 900;
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 25px;
+        line-height: 1;
+      }
+
+      .brand p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .nav {
+        display: grid;
+        gap: 7px;
+      }
+
+      .nav button {
+        width: 100%;
+        min-height: 38px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 10px;
+        border: 1px solid transparent;
+        border-radius: var(--radius);
+        background: transparent;
+        color: var(--ink);
+        text-align: left;
+        font-weight: 750;
+      }
+
+      .nav button:hover,
+      .nav button.active {
+        border-color: var(--line);
+        background: var(--white);
+      }
+
+      .rail-note {
+        margin-top: auto;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      main {
+        min-width: 0;
+        padding: clamp(20px, 4vw, 54px);
+      }
+
+      section {
+        scroll-margin-top: 28px;
+      }
+
+      .hero {
+        min-height: 86vh;
+        display: grid;
+        align-content: center;
+        gap: clamp(24px, 4vw, 52px);
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(280px, 0.56fr);
+        gap: clamp(24px, 5vw, 70px);
+        align-items: center;
+      }
+
+      .eyebrow {
+        margin: 0 0 10px;
+        color: var(--green);
+        font-size: 12px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .hero h2,
+      .section-head h2 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: clamp(42px, 7vw, 86px);
+        line-height: 0.96;
+        font-weight: 700;
+      }
+
+      .section-head h2 {
+        font-size: clamp(32px, 5vw, 58px);
+      }
+
+      .lede {
+        max-width: 760px;
+        margin: 18px 0 0;
+        color: color-mix(in srgb, var(--ink) 82%, var(--muted));
+        font-size: clamp(18px, 2vw, 24px);
+        line-height: 1.58;
+      }
+
+      .plain-box {
+        border: 1px solid var(--ink);
+        border-radius: var(--radius);
+        background: var(--white);
+        box-shadow: var(--shadow);
+      }
+
+      .scoreboard {
+        display: grid;
+        gap: 0;
+        overflow: hidden;
+      }
+
+      .score-row {
+        display: grid;
+        grid-template-columns: 88px minmax(0, 1fr);
+        gap: 12px;
+        padding: 16px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .score-row:last-child {
+        border-bottom: 0;
+      }
+
+      .score-row strong {
+        font-size: 22px;
+      }
+
+      .score-row span {
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      .chapter {
+        margin-top: clamp(46px, 9vw, 108px);
+      }
+
+      .section-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(240px, 380px);
+        gap: 24px;
+        align-items: end;
+        margin-bottom: 24px;
+      }
+
+      .section-head p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 18px;
+      }
+
+      .pill {
+        display: inline-flex;
+        min-height: 30px;
+        align-items: center;
+        padding: 4px 10px;
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        background: var(--white);
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 850;
+      }
+
+      .map-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+        gap: 20px;
+      }
+
+      .architecture {
+        position: relative;
+        min-height: 440px;
+        padding: 22px;
+        overflow: hidden;
+      }
+
+      .lane {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      .node-grid {
+        position: relative;
+        z-index: 2;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+        min-height: 396px;
+      }
+
+      .arch-node {
+        display: grid;
+        align-content: start;
+        gap: 8px;
+        min-height: 170px;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: color-mix(in srgb, var(--white) 93%, var(--paper));
+        text-align: left;
+        transition:
+          transform 180ms ease,
+          border-color 180ms ease,
+          background 180ms ease;
+      }
+
+      .arch-node:hover,
+      .arch-node.active {
+        transform: translateY(-2px);
+        border-color: var(--green);
+        background: var(--white);
+      }
+
+      .arch-node small {
+        color: var(--muted);
+        font-weight: 850;
+        text-transform: uppercase;
+      }
+
+      .arch-node strong {
+        font-family: var(--font-display);
+        font-size: 28px;
+      }
+
+      .arch-node span {
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .detail-panel {
+        min-height: 440px;
+        padding: 22px;
+      }
+
+      .detail-panel h3 {
+        margin: 0 0 12px;
+        font-family: var(--font-display);
+        font-size: 34px;
+      }
+
+      .detail-panel p {
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      .detail-list {
+        display: grid;
+        gap: 10px;
+        margin: 18px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .detail-list li {
+        padding: 10px 0;
+        border-top: 1px solid var(--line);
+        line-height: 1.55;
+      }
+
+      .flow-stage {
+        display: grid;
+        grid-template-columns: minmax(220px, 0.36fr) minmax(0, 1fr);
+        gap: 20px;
+      }
+
+      .step-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .step-button {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: 10px;
+        align-items: center;
+        min-height: 54px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--white);
+        text-align: left;
+      }
+
+      .step-button span:first-child {
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--paper-strong);
+        font-weight: 900;
+      }
+
+      .step-button.active {
+        border-color: var(--green);
+        background: color-mix(in srgb, var(--green) 9%, var(--white));
+      }
+
+      .step-card {
+        min-height: 334px;
+        padding: 24px;
+      }
+
+      .step-card h3 {
+        margin: 0 0 12px;
+        font-family: var(--font-display);
+        font-size: clamp(30px, 4vw, 48px);
+      }
+
+      .step-card p {
+        color: var(--muted);
+        line-height: 1.7;
+        font-size: 17px;
+      }
+
+      .flow-svg {
+        width: 100%;
+        margin-top: 18px;
+      }
+
+      .flow-node {
+        fill: var(--white);
+        stroke: var(--line-strong);
+        stroke-width: 1.4;
+      }
+
+      .flow-node.active {
+        fill: color-mix(in srgb, var(--green) 16%, var(--white));
+        stroke: var(--green);
+        stroke-width: 2.2;
+      }
+
+      .flow-label {
+        fill: var(--ink);
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .flow-arrow {
+        stroke: var(--line-strong);
+        stroke-width: 2;
+        fill: none;
+        marker-end: url(#arrow);
+      }
+
+      .tab-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+
+      .tab-button,
+      .quiz-option {
+        min-height: 38px;
+        padding: 8px 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--white);
+        color: var(--ink);
+        font-weight: 800;
+      }
+
+      .tab-button.active,
+      .quiz-option.selected {
+        border-color: var(--green);
+        background: color-mix(in srgb, var(--green) 10%, var(--white));
+      }
+
+      .page-panel,
+      .quiz-panel,
+      .scenario-panel {
+        padding: 22px;
+      }
+
+      .page-panel h3,
+      .quiz-panel h3,
+      .scenario-panel h3 {
+        margin: 0 0 10px;
+        font-family: var(--font-display);
+        font-size: 34px;
+      }
+
+      .page-panel p,
+      .quiz-panel p,
+      .scenario-panel p {
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 16px;
+      }
+
+      .feature {
+        padding: 13px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: color-mix(in srgb, var(--paper) 62%, var(--white));
+      }
+
+      .feature strong {
+        display: block;
+        margin-bottom: 5px;
+      }
+
+      .feature span {
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      .data-board {
+        display: grid;
+        grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr);
+        gap: 20px;
+      }
+
+      .entity-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .entity-button {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 44px;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--white);
+        color: var(--ink);
+        font-weight: 850;
+        text-align: left;
+      }
+
+      .entity-button.active {
+        border-color: var(--green);
+        background: color-mix(in srgb, var(--green) 9%, var(--white));
+      }
+
+      .entity-card {
+        padding: 22px;
+      }
+
+      .entity-card h3 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 36px;
+      }
+
+      .entity-card p {
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      .field-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 18px;
+      }
+
+      .field {
+        padding: 7px 9px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--white);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .scenario-grid {
+        display: grid;
+        grid-template-columns: minmax(240px, 0.35fr) minmax(0, 1fr);
+        gap: 20px;
+      }
+
+      .select-wrap {
+        display: grid;
+        gap: 8px;
+      }
+
+      select {
+        min-height: 42px;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--white);
+        color: var(--ink);
+        font-weight: 750;
+      }
+
+      .result-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 16px 0;
+      }
+
+      .result-strip span {
+        padding: 7px 9px;
+        border-radius: 999px;
+        background: var(--paper-strong);
+        font-weight: 850;
+      }
+
+      .checklist {
+        display: grid;
+        gap: 10px;
+      }
+
+      .check-item {
+        display: grid;
+        grid-template-columns: 24px minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--white);
+      }
+
+      .check-item input {
+        width: 18px;
+        height: 18px;
+        margin-top: 2px;
+        accent-color: var(--green);
+      }
+
+      .check-item span {
+        line-height: 1.55;
+      }
+
+      .progress {
+        height: 10px;
+        margin: 14px 0 18px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--white);
+        overflow: hidden;
+      }
+
+      .progress-bar {
+        width: 0%;
+        height: 100%;
+        background: var(--green);
+        transition: width 180ms ease;
+      }
+
+      .quiz-options {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 12px 0;
+      }
+
+      .feedback {
+        min-height: 28px;
+        font-weight: 850;
+      }
+
+      .feedback.good {
+        color: var(--green);
+      }
+
+      .feedback.bad {
+        color: var(--red);
+      }
+
+      .footer {
+        margin-top: clamp(60px, 10vw, 120px);
+        padding: 24px 0 0;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      @media (max-width: 1040px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        .rail {
+          position: static;
+          height: auto;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .nav {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .rail-note {
+          margin-top: 0;
+        }
+
+        .hero-grid,
+        .section-head,
+        .map-layout,
+        .flow-stage,
+        .data-board,
+        .scenario-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .detail-panel,
+        .architecture {
+          min-height: auto;
+        }
+      }
+
+      @media (max-width: 680px) {
+        main {
+          padding: 18px;
+        }
+
+        .nav {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .hero {
+          min-height: auto;
+          padding-top: 18px;
+        }
+
+        .node-grid,
+        .feature-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .score-row {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+
+        *,
+        *::before,
+        *::after {
+          transition: none !important;
+          animation: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="rail" aria-label="讲解导航">
+        <div class="brand">
+          <div class="brand-mark">TF</div>
+          <div>
+            <h1>TraceForge</h1>
+            <p>把 AI 调用从黑盒变成可观察、可归因、可评估的系统。</p>
+          </div>
+        </div>
+
+        <nav class="nav">
+          <button type="button" data-scroll="intro" class="active">先懂一句话 <span>01</span></button>
+          <button type="button" data-scroll="map">项目地图 <span>02</span></button>
+          <button type="button" data-scroll="flow">数据流转 <span>03</span></button>
+          <button type="button" data-scroll="pages">网页能看啥 <span>04</span></button>
+          <button type="button" data-scroll="data">核心数据 <span>05</span></button>
+          <button type="button" data-scroll="verify">怎么验收 <span>06</span></button>
+        </nav>
+
+        <p class="rail-note">当前讲解基于本仓库最新实现：Chat Playground、Gateway、TraceRun、Dashboard、Prompt、Eval 已形成本地闭环。</p>
+      </aside>
+
+      <main>
+        <section id="intro" class="hero">
+          <div class="hero-grid">
+            <div>
+              <p class="eyebrow">Plain-language tour</p>
+              <h2>AI 请求不再是黑盒。</h2>
+              <p class="lede">
+                TraceForge 像一个站在模型前面的透明网关：你的应用照常发 AI 请求，它负责转发、鉴权、限流、记录证据。
+                然后你在 Console 里看到这次调用的输入、输出、耗时、token、成本和失败原因。
+              </p>
+              <div class="pill-row">
+                <span class="pill">OpenAI Compatible</span>
+                <span class="pill">Rust Gateway</span>
+                <span class="pill">Next.js Console</span>
+                <span class="pill">PostgreSQL Trace</span>
+              </div>
+            </div>
+
+            <div class="plain-box scoreboard" aria-label="三句话理解 TraceForge">
+              <div class="score-row">
+                <strong>1</strong>
+                <span>业务应用把 AI 请求先发给 Gateway，而不是直接发给模型。</span>
+              </div>
+              <div class="score-row">
+                <strong>2</strong>
+                <span>Gateway 一边转发给上游模型，一边把调用过程写进数据库。</span>
+              </div>
+              <div class="score-row">
+                <strong>3</strong>
+                <span>Console 把数据库里的 TraceRun 展示成瀑布图、成本看板、Prompt/Eval 证据。</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="map" class="chapter">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Project map</p>
+              <h2>项目由三层组成。</h2>
+            </div>
+            <p>点左边任意模块，右边会解释它在系统里的位置。最重要的是：Gateway 是数据面，Console 是控制面，PostgreSQL 是共同事实源。</p>
+          </div>
+
+          <div class="map-layout">
+            <div class="plain-box architecture">
+              <svg class="lane" viewBox="0 0 600 420" aria-hidden="true">
+                <defs>
+                  <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                    <path d="M0,0 L8,4 L0,8 Z" fill="#9d907b"></path>
+                  </marker>
+                </defs>
+                <path class="flow-arrow" d="M170 110 C260 80 330 80 430 110"></path>
+                <path class="flow-arrow" d="M460 175 C450 245 390 284 310 302"></path>
+                <path class="flow-arrow" d="M270 302 C200 285 155 245 145 175"></path>
+              </svg>
+
+              <div class="node-grid">
+                <button class="arch-node active" type="button" data-arch="client">
+                  <small>入口</small>
+                  <strong>业务应用 / Chat</strong>
+                  <span>发起 OpenAI-compatible 请求。</span>
+                </button>
+                <button class="arch-node" type="button" data-arch="gateway">
+                  <small>数据面</small>
+                  <strong>Rust Gateway</strong>
+                  <span>鉴权、限流、转发、stream、fallback、采集。</span>
+                </button>
+                <button class="arch-node" type="button" data-arch="db">
+                  <small>事实源</small>
+                  <strong>PostgreSQL</strong>
+                  <span>存 TraceRun、Span、Event、Prompt、Eval、成本。</span>
+                </button>
+                <button class="arch-node" type="button" data-arch="console">
+                  <small>控制面</small>
+                  <strong>Next.js Console</strong>
+                  <span>把数据变成可读、可查、可验收的界面。</span>
+                </button>
+              </div>
+            </div>
+
+            <aside class="plain-box detail-panel" id="archDetail">
+              <h3>业务应用 / Chat</h3>
+              <p>它是请求的发起者。真实业务应用可以把 baseURL 指到 Gateway；本项目还提供 `/chat` 页面，让你不用写 curl，也能从网页发起一次测试调用。</p>
+              <ul class="detail-list">
+                <li>请求形状仍然是 OpenAI-compatible。</li>
+                <li>Chat 页面不会暴露项目 API Key。</li>
+                <li>每次测试都会跳到对应 TraceRun。</li>
+              </ul>
+            </aside>
+          </div>
+        </section>
+
+        <section id="flow" class="chapter">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Data flow</p>
+              <h2>一次请求怎么走。</h2>
+            </div>
+            <p>下面是最核心的链路。你可以按步骤点，也可以用键盘 Tab 到按钮后回车切换。</p>
+          </div>
+
+          <div class="flow-stage">
+            <div class="step-list" id="stepList" aria-label="数据流步骤"></div>
+            <div class="plain-box step-card">
+              <p class="eyebrow" id="stepKicker">Step 1</p>
+              <h3 id="stepTitle">应用发起 AI 请求</h3>
+              <p id="stepText">业务应用或 `/chat` 页面发出 OpenAI-compatible 请求，目标是 TraceForge Gateway。</p>
+              <svg class="flow-svg" viewBox="0 0 760 180" role="img" aria-label="TraceForge 请求流转图">
+                <defs>
+                  <marker id="arrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                    <path d="M0,0 L8,4 L0,8 Z" fill="#9d907b"></path>
+                  </marker>
+                </defs>
+                <path class="flow-arrow" marker-end="url(#arrow2)" d="M130 90 L240 90"></path>
+                <path class="flow-arrow" marker-end="url(#arrow2)" d="M360 90 L470 90"></path>
+                <path class="flow-arrow" marker-end="url(#arrow2)" d="M590 90 L700 90"></path>
+                <rect class="flow-node active" data-flow-node="0" x="20" y="48" width="110" height="84" rx="8"></rect>
+                <rect class="flow-node" data-flow-node="1" x="250" y="48" width="110" height="84" rx="8"></rect>
+                <rect class="flow-node" data-flow-node="2" x="480" y="48" width="110" height="84" rx="8"></rect>
+                <rect class="flow-node" data-flow-node="3" x="710" y="48" width="30" height="84" rx="8"></rect>
+                <text class="flow-label" x="75" y="84" text-anchor="middle">应用</text>
+                <text class="flow-label" x="75" y="106" text-anchor="middle">/chat</text>
+                <text class="flow-label" x="305" y="84" text-anchor="middle">Gateway</text>
+                <text class="flow-label" x="305" y="106" text-anchor="middle">鉴权限流</text>
+                <text class="flow-label" x="535" y="84" text-anchor="middle">上游模型</text>
+                <text class="flow-label" x="535" y="106" text-anchor="middle">返回响应</text>
+                <text class="flow-label" x="725" y="84" text-anchor="middle">DB</text>
+                <text class="flow-label" x="725" y="106" text-anchor="middle">Trace</text>
+              </svg>
+            </div>
+          </div>
+        </section>
+
+        <section id="pages" class="chapter">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Console pages</p>
+              <h2>网页控制台看什么。</h2>
+            </div>
+            <p>Console 是给人看的。Gateway 写事实，Console 负责把事实整理成能判断、能排障、能验收的页面。</p>
+          </div>
+
+          <div class="tab-bar" id="pageTabs" aria-label="页面切换"></div>
+          <article class="plain-box page-panel" id="pagePanel"></article>
+        </section>
+
+        <section id="data" class="chapter">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Data model</p>
+              <h2>数据库里存什么。</h2>
+            </div>
+            <p>不用先背表。先抓住一个主线：一次调用是 Run，Run 下面有 Span，Span 上挂 Event。</p>
+          </div>
+
+          <div class="data-board">
+            <div class="entity-list" id="entityList" aria-label="核心数据对象"></div>
+            <div class="plain-box entity-card" id="entityCard"></div>
+          </div>
+        </section>
+
+        <section id="debug" class="chapter">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Debug story</p>
+              <h2>失败时怎么查。</h2>
+            </div>
+            <p>TraceForge 的主叙事是：一次失败调用，三步定位根因。选一个场景看看它会怎么呈现。</p>
+          </div>
+
+          <div class="scenario-grid">
+            <div class="plain-box scenario-panel">
+              <div class="select-wrap">
+                <label for="scenarioSelect"><strong>选择一个失败场景</strong></label>
+                <select id="scenarioSelect">
+                  <option value="rate">限流了</option>
+                  <option value="provider">上游模型挂了</option>
+                  <option value="stream">stream 中断</option>
+                  <option value="auth">API Key 被撤销</option>
+                </select>
+              </div>
+            </div>
+            <div class="plain-box scenario-panel" id="scenarioPanel"></div>
+          </div>
+        </section>
+
+        <section id="verify" class="chapter">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Hands-on</p>
+              <h2>你怎么验收。</h2>
+            </div>
+            <p>这不是自动测试报告，而是给你自己走一遍的人工验收路径。勾完以后，你应该能说清楚项目到底完成了什么。</p>
+          </div>
+
+          <div class="plain-box page-panel">
+            <h3>人工验证清单</h3>
+            <div class="progress" aria-label="完成进度"><div class="progress-bar" id="progressBar"></div></div>
+            <div class="checklist" id="checklist"></div>
+          </div>
+        </section>
+
+        <section class="chapter" id="quiz">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Tiny quiz</p>
+              <h2>检查你是否真的懂了。</h2>
+            </div>
+            <p>随便点，答错会告诉你原因。这个小测验只测核心概念。</p>
+          </div>
+          <div class="plain-box quiz-panel">
+            <h3 id="quizQuestion"></h3>
+            <div class="quiz-options" id="quizOptions"></div>
+            <p class="feedback" id="quizFeedback"></p>
+          </div>
+        </section>
+
+        <footer class="footer">
+          <p>
+            这份 HTML 是对 TraceForge 当前实现的互动讲解：它不需要后端服务即可阅读；如果要体验真实链路，启动 Console、Gateway 和 mock upstream 后打开
+            <code>/chat</code>。
+          </p>
+        </footer>
+      </main>
+    </div>
+
+    <script>
+      const arch = {
+        client: {
+          title: "业务应用 / Chat",
+          text: "它是请求的发起者。真实业务应用可以把 baseURL 指到 Gateway；本项目还提供 /chat 页面，让你不用写 curl，也能从网页发起一次测试调用。",
+          points: ["请求形状仍然是 OpenAI-compatible。", "Chat 页面不会暴露项目 API Key。", "每次测试都会跳到对应 TraceRun。"]
+        },
+        gateway: {
+          title: "Rust Gateway",
+          text: "Gateway 是数据面。它真正站在 AI 请求路上，负责鉴权、限流、转发、stream 透传、fallback，以及把调用过程写成 Trace。",
+          points: ["入口是 /v1/chat/completions。", "支持 X-TraceForge-Run-Id 预声明 Run。", "请求开始就创建 running TraceRun。"]
+        },
+        db: {
+          title: "PostgreSQL",
+          text: "数据库是共同事实源。Gateway 写 Trace 热路径，Console 读这些事实并管理 Prompt、Eval、模型配置等控制面数据。",
+          points: ["TraceRun 代表一次完整调用。", "TraceSpan 代表调用里的逻辑步骤。", "TraceEvent 记录 first_token、stream_start、fallback 等时间点。"]
+        },
+        console: {
+          title: "Next.js Console",
+          text: "Console 是控制面。它不是转发请求的主路径，而是给人看的驾驶舱：看 Trace、看成本、管理 Prompt、跑 Eval、做 Chat 测试。",
+          points: ["Dashboard 看趋势和治理。", "TraceRun 详情看证据。", "Prompt 和 Eval 支持上线前回归判断。"]
+        }
+      };
+
+      const flowSteps = [
+        {
+          title: "应用发起 AI 请求",
+          text: "业务应用或 /chat 页面发出 OpenAI-compatible 请求，目标是 TraceForge Gateway。对业务方来说，这仍然像一次普通模型调用。",
+          node: 0
+        },
+        {
+          title: "Gateway 鉴权、限流、路由",
+          text: "Gateway 检查 API Key 是否有效，再看 RPM 和并发是否超限，然后根据 ModelConfig 找到要调用的上游 Provider 和模型。",
+          node: 1
+        },
+        {
+          title: "创建 running TraceRun",
+          text: "请求被接受后，Gateway 立即写入 TraceRun(status=running)。所以页面可以先跳到 TraceRun 等待结果，而不是事后猜最近一条记录。",
+          node: 3
+        },
+        {
+          title: "调用上游模型",
+          text: "Gateway 把请求转发给上游模型。如果是 stream，会透传 SSE；如果首 chunk 前失败，可以走 fallback。",
+          node: 2
+        },
+        {
+          title: "补齐成功或失败证据",
+          text: "上游返回后，Gateway 更新同一个 TraceRun，补齐输出、错误、token、成本、耗时、Span、Event。Console 读这些事实展示给你。",
+          node: 3
+        }
+      ];
+
+      const pages = [
+        {
+          id: "chat",
+          label: "/chat",
+          title: "Chat Playground",
+          text: "这是登录后的对话测试页。你选模型、填 messages、选 stream 或 non-stream，点发送后立刻跳到对应 TraceRun。",
+          features: [
+            ["用途", "不用 curl，也能从网页发起真实 Gateway 调用。"],
+            ["关键设计", "Console 服务端代理调用 Gateway，浏览器不拿项目 API Key。"],
+            ["结果", "跳到 /traces/{runId}?pending=1，看 running 到 success/failed。"]
+          ]
+        },
+        {
+          id: "traces",
+          label: "TraceRuns",
+          title: "TraceRun 列表和详情",
+          text: "这里是排障主战场。列表筛失败，详情看输入输出、Span Tree、Waterfall、错误码和责任域。",
+          features: [
+            ["TraceRun", "一次端到端调用。"],
+            ["Span Tree", "把调用拆成逻辑步骤。"],
+            ["Waterfall", "看哪个步骤慢、哪个步骤失败。"]
+          ]
+        },
+        {
+          id: "dashboard",
+          label: "Dashboard",
+          title: "成本和治理看板",
+          text: "这里看整体情况：成本、token、P95 延迟、失败率、限流、fallback、stream 中断等。",
+          features: [
+            ["成本", "按模型和 Provider 看花费。"],
+            ["稳定性", "看失败率和延迟。"],
+            ["治理", "看限流、撤销 Key、fallback 等信号。"]
+          ]
+        },
+        {
+          id: "prompt",
+          label: "Prompt",
+          title: "Prompt 版本管理",
+          text: "Prompt 不再是一段随手改的文本，而是有版本、有 diff、有发布指针、有回滚路径的资产。",
+          features: [
+            ["版本", "每次改动生成 PromptVersion。"],
+            ["Diff", "看两个版本到底差在哪。"],
+            ["追溯", "TraceRun 可以关联 PromptVersion。"]
+          ]
+        },
+        {
+          id: "eval",
+          label: "Eval",
+          title: "Eval 回归评测",
+          text: "Prompt 或模型改动后，用评测集跑一遍，判断有没有退化。它是上线前的回归闸门。",
+          features: [
+            ["Dataset", "一组测试用例。"],
+            ["Run", "一次评测执行。"],
+            ["Compare", "对比不同版本通过率和失败样本。"]
+          ]
+        }
+      ];
+
+      const entities = [
+        {
+          id: "run",
+          title: "TraceRun",
+          text: "一次完整 AI 调用。它是整棵调用树的根，比如一次 Gateway 请求或一次 Agent 任务。",
+          fields: ["id", "project_id", "status", "input_preview", "output_preview", "total_tokens", "cost", "latency_ms", "error_code"]
+        },
+        {
+          id: "span",
+          title: "TraceSpan",
+          text: "Run 内的一个逻辑步骤，比如 LLM 调用、工具调用、工作流步骤。它不是物理 attempt。",
+          fields: ["run_id", "parent_id", "type", "model", "provider", "status", "error", "prompt_tokens", "completion_tokens"]
+        },
+        {
+          id: "event",
+          title: "TraceEvent",
+          text: "某个 Span 上的时间点标记，比如 stream_start、first_token、fallback_triggered。",
+          fields: ["span_id", "type", "payload", "created_at"]
+        },
+        {
+          id: "model",
+          title: "ModelConfig",
+          text: "告诉 Gateway 某个 model 名应该走哪个 Provider、是否有 fallback、当前是否 active。",
+          fields: ["provider_id", "model_name", "display_name", "fallback_model_id", "status"]
+        },
+        {
+          id: "key",
+          title: "ApiKey",
+          text: "项目级数据面凭证。Gateway 用它鉴权，并读取限流配置。",
+          fields: ["key_hash", "scope", "status", "rpm_limit", "concurrency_limit", "revoked_at"]
+        },
+        {
+          id: "prompt",
+          title: "PromptVersion",
+          text: "Prompt 的不可变版本快照。用于 diff、回滚，也能作为 Eval 和 Trace 的证据。",
+          fields: ["prompt_id", "version", "content", "status", "created_at"]
+        },
+        {
+          id: "eval",
+          title: "EvalRun",
+          text: "一次评测执行，把数据集、PromptVersion、ModelConfig 绑定起来，产出多个 EvalResult。",
+          fields: ["dataset_id", "prompt_version_id", "model_config_id", "status", "pass_rate", "total_cost"]
+        }
+      ];
+
+      const scenarios = {
+        rate: {
+          title: "限流了",
+          summary: "Gateway 拒绝请求，TraceRun 会是 failed，error_code 通常是 rate_limited 或 concurrency_limited。",
+          tags: ["责任域：限流", "状态：failed", "Span：可能没有上游 Span"],
+          steps: ["打开 TraceRuns，筛 failed。", "进入详情，看 Error Code。", "如果责任域是限流，检查 API Key 的 RPM/并发配置。"]
+        },
+        provider: {
+          title: "上游模型挂了",
+          summary: "Gateway 已经把请求发给上游，但上游返回 5xx 或连接失败。TraceRun failed，Span 上会有上游错误。",
+          tags: ["责任域：模型/网络", "状态：failed", "Span：llm failed"],
+          steps: ["看 Span Tree 里失败的 LLM Span。", "看 provider/model 是否是预期模型。", "如果首 chunk 前失败且有 fallback，看 Event 里是否有 fallback_triggered。"]
+        },
+        stream: {
+          title: "stream 中断",
+          summary: "SSE 已开始，但中途断了。TraceEvent 会记录 stream_start、first_token、stream_error 或 stream_interrupted。",
+          tags: ["责任域：网络", "事件：stream_error", "输出：可能只有部分内容"],
+          steps: ["打开对应 TraceRun。", "看 Events 是否有 stream_start 和 stream_error。", "看输出预览是否是不完整内容。"]
+        },
+        auth: {
+          title: "API Key 被撤销",
+          summary: "Gateway 在鉴权阶段拒绝。请求不会到上游模型，TraceRun 用来记录网关拒绝证据。",
+          tags: ["责任域：网关拒绝", "状态：failed", "上游：未调用"],
+          steps: ["看 Error Code 是否是 revoked_api_key。", "确认 ApiKey 状态和 revoked_at。", "重新启用或替换新的项目 API Key。"]
+        }
+      };
+
+      const checks = [
+        "打开 http://localhost:3000/login 并登录 Console。",
+        "进入 /chat，确认能看到 Mock Upstream / mock-ok 等 active 模型。",
+        "non-stream 发送默认 messages，页面立即跳到 /traces/{runId}?pending=1。",
+        "等待 TraceRun 进入 success，Output Preview 包含 hello from mock。",
+        "回到 /chat，勾选 Stream 再发一次，最终也进入 success。",
+        "选择 mock-fail-alone 发送，确认 TraceRun failed 且能看到错误信息。",
+        "在 messages 输入非法 JSON，确认 /chat 阻止发送并提示。",
+        "打开 Dashboard，看成本、延迟、失败和治理面板。",
+        "打开 Prompt，看版本、diff、发布/回滚入口。",
+        "打开 Eval，看评测集、评测运行和对比结果。"
+      ];
+
+      const quiz = {
+        question: "TraceForge 最核心的数据根对象是什么？",
+        answer: "TraceRun",
+        options: ["TraceRun", "TraceEvent", "PromptVersion", "ModelPricing"],
+        explain: "TraceRun 代表一次端到端调用，是 Span 和 Event 的根。"
+      };
+
+      function renderArch(key) {
+        const item = arch[key];
+        document.querySelectorAll(".arch-node").forEach((node) => {
+          node.classList.toggle("active", node.dataset.arch === key);
+        });
+        document.getElementById("archDetail").innerHTML = `
+          <h3>${item.title}</h3>
+          <p>${item.text}</p>
+          <ul class="detail-list">${item.points.map((point) => `<li>${point}</li>`).join("")}</ul>
+        `;
+      }
+
+      function renderSteps(activeIndex) {
+        const list = document.getElementById("stepList");
+        list.innerHTML = flowSteps
+          .map(
+            (step, index) => `
+              <button class="step-button ${index === activeIndex ? "active" : ""}" type="button" data-step="${index}">
+                <span>${index + 1}</span>
+                <strong>${step.title}</strong>
+              </button>
+            `
+          )
+          .join("");
+        const active = flowSteps[activeIndex];
+        document.getElementById("stepKicker").textContent = `Step ${activeIndex + 1}`;
+        document.getElementById("stepTitle").textContent = active.title;
+        document.getElementById("stepText").textContent = active.text;
+        document.querySelectorAll(".flow-node").forEach((node) => {
+          node.classList.toggle("active", Number(node.dataset.flowNode) === active.node);
+        });
+      }
+
+      function renderPages(activeId) {
+        const tabs = document.getElementById("pageTabs");
+        tabs.innerHTML = pages
+          .map((page) => `<button class="tab-button ${page.id === activeId ? "active" : ""}" type="button" data-page="${page.id}">${page.label}</button>`)
+          .join("");
+        const page = pages.find((item) => item.id === activeId);
+        document.getElementById("pagePanel").innerHTML = `
+          <h3>${page.title}</h3>
+          <p>${page.text}</p>
+          <div class="feature-grid">
+            ${page.features
+              .map(
+                ([title, text]) => `
+                  <div class="feature">
+                    <strong>${title}</strong>
+                    <span>${text}</span>
+                  </div>
+                `
+              )
+              .join("")}
+          </div>
+        `;
+      }
+
+      function renderEntities(activeId) {
+        document.getElementById("entityList").innerHTML = entities
+          .map((entity) => `<button class="entity-button ${entity.id === activeId ? "active" : ""}" type="button" data-entity="${entity.id}">${entity.title}<span>查看</span></button>`)
+          .join("");
+        const entity = entities.find((item) => item.id === activeId);
+        document.getElementById("entityCard").innerHTML = `
+          <h3>${entity.title}</h3>
+          <p>${entity.text}</p>
+          <div class="field-list">${entity.fields.map((field) => `<span class="field">${field}</span>`).join("")}</div>
+        `;
+      }
+
+      function renderScenario(key) {
+        const scenario = scenarios[key];
+        document.getElementById("scenarioPanel").innerHTML = `
+          <h3>${scenario.title}</h3>
+          <p>${scenario.summary}</p>
+          <div class="result-strip">${scenario.tags.map((tag) => `<span>${tag}</span>`).join("")}</div>
+          <ul class="detail-list">${scenario.steps.map((step) => `<li>${step}</li>`).join("")}</ul>
+        `;
+      }
+
+      function renderChecklist() {
+        document.getElementById("checklist").innerHTML = checks
+          .map(
+            (item, index) => `
+              <label class="check-item">
+                <input type="checkbox" data-check="${index}" />
+                <span>${item}</span>
+              </label>
+            `
+          )
+          .join("");
+      }
+
+      function updateProgress() {
+        const inputs = Array.from(document.querySelectorAll("[data-check]"));
+        const done = inputs.filter((input) => input.checked).length;
+        const pct = inputs.length ? Math.round((done / inputs.length) * 100) : 0;
+        document.getElementById("progressBar").style.width = `${pct}%`;
+      }
+
+      function renderQuiz() {
+        document.getElementById("quizQuestion").textContent = quiz.question;
+        document.getElementById("quizOptions").innerHTML = quiz.options
+          .map((option) => `<button class="quiz-option" type="button" data-answer="${option}">${option}</button>`)
+          .join("");
+      }
+
+      document.querySelectorAll("[data-scroll]").forEach((button) => {
+        button.addEventListener("click", () => {
+          document.querySelectorAll("[data-scroll]").forEach((item) => item.classList.remove("active"));
+          button.classList.add("active");
+          document.getElementById(button.dataset.scroll).scrollIntoView({ block: "start" });
+        });
+      });
+
+      document.querySelectorAll(".arch-node").forEach((node) => {
+        node.addEventListener("click", () => renderArch(node.dataset.arch));
+      });
+
+      document.addEventListener("click", (event) => {
+        const step = event.target.closest("[data-step]");
+        if (step) renderSteps(Number(step.dataset.step));
+
+        const tab = event.target.closest("[data-page]");
+        if (tab) renderPages(tab.dataset.page);
+
+        const entity = event.target.closest("[data-entity]");
+        if (entity) renderEntities(entity.dataset.entity);
+
+        const answer = event.target.closest("[data-answer]");
+        if (answer) {
+          document.querySelectorAll("[data-answer]").forEach((item) => item.classList.remove("selected"));
+          answer.classList.add("selected");
+          const feedback = document.getElementById("quizFeedback");
+          const correct = answer.dataset.answer === quiz.answer;
+          feedback.textContent = correct ? `答对了。${quiz.explain}` : `还差一点。${quiz.explain}`;
+          feedback.className = `feedback ${correct ? "good" : "bad"}`;
+        }
+      });
+
+      document.getElementById("scenarioSelect").addEventListener("change", (event) => {
+        renderScenario(event.target.value);
+      });
+
+      document.addEventListener("change", (event) => {
+        if (event.target.matches("[data-check]")) updateProgress();
+      });
+
+      renderSteps(0);
+      renderPages("chat");
+      renderEntities("run");
+      renderScenario("rate");
+      renderChecklist();
+      renderQuiz();
+      updateProgress();
+    </script>
+  </body>
+</html>

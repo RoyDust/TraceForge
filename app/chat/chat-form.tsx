@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 type ModelOption = {
   id: string;
@@ -10,104 +9,268 @@ type ModelOption = {
   providerName: string;
 };
 
+type ChatMessage = {
+  id: string;
+  role: "system" | "user" | "assistant";
+  content: string;
+  state?: "pending" | "done" | "error";
+};
+
 type DispatchResponse = {
   runId?: string;
   traceUrl?: string;
   error?: string;
 };
 
-const DEFAULT_MESSAGES = JSON.stringify(
-  [
-    { role: "system", content: "You are a concise assistant." },
-    { role: "user", content: "Say hello from TraceForge." },
-  ],
-  null,
-  2,
-);
+type RunSnapshot = {
+  id: string;
+  name: string | null;
+  status: "running" | "success" | "failed" | "cancelled";
+  errorCode: string | null;
+  inputPreview: string | null;
+  outputPreview: string | null;
+  totalTokens: number | null;
+  cost: string | null;
+  latencyMs: number | null;
+  usageSource: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  model: string | null;
+  provider: string | null;
+  spanCount: number;
+  eventTypes: string[];
+  error: string | null;
+};
 
-function validateMessages(value: unknown) {
-  if (!Array.isArray(value)) return "messages 必须是数组。";
-  if (value.length === 0) return "messages 至少需要一条消息。";
-  for (const [index, item] of value.entries()) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      return `messages[${index}] 必须是对象。`;
-    }
-    const record = item as Record<string, unknown>;
-    if (typeof record.role !== "string" || !record.role.trim()) {
-      return `messages[${index}].role 不能为空。`;
-    }
-    if (!("content" in record)) {
-      return `messages[${index}].content 必须存在。`;
-    }
-  }
-  return null;
+type RunResponse = {
+  run: RunSnapshot | null;
+  error?: string;
+};
+
+const SYSTEM_PROMPT = "你是一个简洁的助手。";
+const INITIAL_MESSAGES: ChatMessage[] = [
+  {
+    id: "welcome",
+    role: "assistant",
+    content: "我已经准备好。发送一条消息后，左侧会同步显示这次 TraceRun 的实时状态。",
+    state: "done",
+  },
+];
+
+function formatCost(value: string | null) {
+  if (!value) return "—";
+  const number = Number(value);
+  return Number.isFinite(number) ? `$${number.toFixed(8)}` : value;
+}
+
+function formatMs(value: number | null) {
+  return value === null ? "—" : `${value} ms`;
+}
+
+function compactId(value: string | null) {
+  return value ? `${value.slice(0, 8)}…${value.slice(-4)}` : "—";
+}
+
+function terminal(status: RunSnapshot["status"] | "pending" | null) {
+  return status === "success" || status === "failed" || status === "cancelled";
+}
+
+function statusLabel(status: RunSnapshot["status"] | "pending" | null) {
+  if (status === "pending") return "等待中";
+  if (status === "running") return "运行中";
+  if (status === "success") return "成功";
+  if (status === "failed") return "失败";
+  if (status === "cancelled") return "已取消";
+  return "空闲";
 }
 
 export function ChatForm({ models, hasChatApiKey }: { models: ModelOption[]; hasChatApiKey: boolean }) {
-  const router = useRouter();
-  const [model, setModel] = useState(models[0]?.modelName ?? "");
-  const [messagesText, setMessagesText] = useState(DEFAULT_MESSAGES);
+  const preferredModel = models.find((option) => option.modelName === "mock-ok") ?? models[0];
+  const [model, setModel] = useState(preferredModel?.modelName ?? "");
   const [stream, setStream] = useState(false);
+  const [input, setInput] = useState("Say hello from TraceForge.");
+  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null);
+  const [currentTraceUrl, setCurrentTraceUrl] = useState<string | null>(null);
+  const [run, setRun] = useState<RunSnapshot | null>(null);
+  const [runPending, setRunPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const assistantMessageId = useRef<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
+  const selectedModel = models.find((option) => option.modelName === model);
   const disabledReason = useMemo(() => {
-    if (!hasChatApiKey) return "缺少 TRACEFORGE_CHAT_API_KEY，无法发送。";
-    if (models.length === 0) return "没有可用的 active ModelConfig。";
+    if (!hasChatApiKey) return "缺少 TRACEFORGE_CHAT_API_KEY";
+    if (models.length === 0) return "没有可用模型";
     return null;
   }, [hasChatApiKey, models.length]);
-  const canSend = !disabledReason && !sending;
+  const canSend = !disabledReason && !sending && input.trim().length > 0;
+  const status = run?.status ?? (runPending ? "pending" : null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: "end" });
+  }, [messages, run?.status]);
+
+  useEffect(() => {
+    if (!currentRunId || terminal(status)) return;
+
+    let cancelled = false;
+    async function tick() {
+      try {
+        const response = await fetch(`/chat/runs/${currentRunId}`, { cache: "no-store" });
+        const body = (await response.json().catch(() => ({}))) as RunResponse;
+        if (cancelled) return;
+        if (!response.ok) {
+          setError(body.error ?? `读取 TraceRun 失败 (${response.status})。`);
+          return;
+        }
+        setRun(body.run);
+        setRunPending(!body.run);
+        if (!body.run || !assistantMessageId.current) return;
+
+        if (body.run.status === "success") {
+          const content = body.run.outputPreview?.trim() || "完成，但没有输出预览。";
+          setMessages((items) => items.map((item) => (item.id === assistantMessageId.current ? { ...item, content, state: "done" } : item)));
+          setSending(false);
+        }
+        if (body.run.status === "failed" || body.run.status === "cancelled") {
+          const content = body.run.error || body.run.errorCode || "调用失败。";
+          setMessages((items) => items.map((item) => (item.id === assistantMessageId.current ? { ...item, content, state: "error" } : item)));
+          setSending(false);
+        }
+      } catch (pollError) {
+        if (!cancelled) {
+          setError(pollError instanceof Error ? pollError.message : "读取 TraceRun 失败。");
+        }
+      }
+    }
+
+    tick();
+    const timer = window.setInterval(tick, 1200);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [currentRunId, status]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const content = input.trim();
+    if (!content || !canSend) return;
+
+    const previousConversation = messages
+      .filter((message) => message.role === "user" || (message.role === "assistant" && message.state === "done"))
+      .map((message) => ({ role: message.role, content: message.content }));
+    const gatewayMessages = [{ role: "system", content: SYSTEM_PROMPT }, ...previousConversation, { role: "user", content }];
+    const userId = crypto.randomUUID();
+    const assistantId = crypto.randomUUID();
+
+    assistantMessageId.current = assistantId;
+    setMessages((items) => [
+      ...items,
+      { id: userId, role: "user", content, state: "done" },
+      { id: assistantId, role: "assistant", content: "等待网关接受请求…", state: "pending" },
+    ]);
+    setInput("");
+    setRun(null);
+    setRunPending(true);
     setError(null);
-
-    let messages: unknown;
-    try {
-      messages = JSON.parse(messagesText);
-    } catch {
-      setError("messages 不是合法 JSON。");
-      return;
-    }
-    const validationError = validateMessages(messages);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-
     setSending(true);
+
     try {
       const response = await fetch("/chat/dispatch", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ model, messages, stream }),
+        body: JSON.stringify({ model, messages: gatewayMessages, stream }),
       });
       const body = (await response.json().catch(() => ({}))) as DispatchResponse;
-      if (!response.ok || !body.traceUrl) {
-        setError(body.error ?? `发送失败 (${response.status})。`);
+      if (!response.ok || !body.runId) {
+        const message = body.error ?? `发送失败 (${response.status})。`;
+        setError(message);
+        setRunPending(false);
         setSending(false);
+        setMessages((items) => items.map((item) => (item.id === assistantId ? { ...item, content: message, state: "error" } : item)));
         return;
       }
-      router.push(body.traceUrl);
+      setCurrentRunId(body.runId);
+      setCurrentTraceUrl(body.traceUrl ?? `/traces/${body.runId}?pending=1`);
     } catch (dispatchError) {
-      setError(dispatchError instanceof Error ? dispatchError.message : "发送失败。");
+      const message = dispatchError instanceof Error ? dispatchError.message : "发送失败。";
+      setError(message);
+      setRunPending(false);
       setSending(false);
+      setMessages((items) => items.map((item) => (item.id === assistantId ? { ...item, content: message, state: "error" } : item)));
     }
   }
 
   return (
-    <div className="detail-grid chat-grid">
-      <section className="section">
-        <form className="stack-form chat-form" onSubmit={onSubmit}>
-          {models.length === 0 ? (
-            <div className="empty-state">
-              <h2>没有可用模型</h2>
-              <p className="muted">当前没有 active ModelConfig。</p>
+    <div className="chat-workbench">
+      <aside className="chat-live-panel" aria-label="当前对话实时信息">
+        <section className="section-band">
+          <div className="chat-panel-head">
+            <div>
+              <p className="eyebrow">实时运行</p>
+              <h2>当前对话</h2>
+            </div>
+            <span className={status ? `badge ${status}` : "badge"}>{statusLabel(status)}</span>
+          </div>
+
+          <div className="kv-grid single-column">
+            <div className="kv">
+              <small>运行 ID</small>
+              <strong>{compactId(currentRunId)}</strong>
+            </div>
+            <div className="kv">
+              <small>模型</small>
+              <strong>{selectedModel ? `${selectedModel.providerName} / ${selectedModel.displayName ?? selectedModel.modelName}` : "—"}</strong>
+            </div>
+            <div className="kv">
+              <small>模式</small>
+              <strong>{stream ? "流式" : "非流式"}</strong>
+            </div>
+            <div className="kv">
+              <small>供应商</small>
+              <strong>{run?.provider ?? selectedModel?.providerName ?? "—"}</strong>
+            </div>
+            <div className="kv">
+              <small>延迟</small>
+              <strong>{formatMs(run?.latencyMs ?? null)}</strong>
+            </div>
+            <div className="kv">
+              <small>令牌</small>
+              <strong>{run?.totalTokens ?? "—"}</strong>
+            </div>
+            <div className="kv">
+              <small>成本</small>
+              <strong>{formatCost(run?.cost ?? null)}</strong>
+            </div>
+          </div>
+
+          {run?.errorCode ? (
+            <div className="chat-error-note">
+              <strong>{run.errorCode}</strong>
+              <span>{run.error ?? "调用失败，打开追踪运行查看详情。"}</span>
             </div>
           ) : null}
 
+          <div className="chat-event-strip">
+            {(run?.eventTypes.length ? run.eventTypes : status === "pending" ? ["pending"] : ["ready"]).slice(-5).map((eventType, index) => (
+              <span key={`${eventType}-${index}`}>{eventType}</span>
+            ))}
+          </div>
+
+          {currentTraceUrl ? (
+            <a className="button secondary chat-trace-link" href={currentTraceUrl}>
+              打开追踪运行
+            </a>
+          ) : null}
+        </section>
+
+        <section className="section-band">
+          <h2>设置</h2>
           <label>
-            Model
+            模型
             <select value={model} onChange={(event) => setModel(event.target.value)} disabled={models.length === 0 || sending}>
               {models.map((option) => (
                 <option key={option.id} value={option.modelName}>
@@ -116,55 +279,53 @@ export function ChatForm({ models, hasChatApiKey }: { models: ModelOption[]; has
               ))}
             </select>
           </label>
-
-          <label>
-            Messages
-            <textarea
-              className="chat-editor"
-              value={messagesText}
-              onChange={(event) => setMessagesText(event.target.value)}
-              spellCheck={false}
-              disabled={sending}
-            />
-          </label>
-
           <label className="checkbox-row">
             <input type="checkbox" checked={stream} onChange={(event) => setStream(event.target.checked)} disabled={sending} />
-            Stream
+            流式输出
           </label>
-
           {disabledReason ? <p className="form-error">{disabledReason}</p> : null}
+        </section>
+      </aside>
+
+      <section className="chat-conversation" aria-label="智能体对话">
+        <div className="chat-thread">
+          {messages.map((message) => (
+            <article className={`chat-bubble ${message.role} ${message.state ?? ""}`} key={message.id}>
+              <small>{message.role === "user" ? "你" : "TraceForge 智能体"}</small>
+              <p>{message.content}</p>
+            </article>
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <form className="chat-composer" onSubmit={onSubmit}>
           {error ? (
             <p className="form-error" role="alert">
               {error}
             </p>
           ) : null}
-
+          {models.length === 0 ? (
+            <div className="empty-state">
+              <h2>没有可用模型</h2>
+              <p className="muted">当前没有启用的模型配置。</p>
+            </div>
+          ) : null}
+          <label>
+            消息
+            <textarea
+              className="chat-message-input"
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder="输入一条消息..."
+              rows={3}
+              disabled={Boolean(disabledReason)}
+            />
+          </label>
           <button type="submit" disabled={!canSend}>
-            {sending ? "发送中" : "发送"}
+            {sending ? "等待响应" : "发送消息"}
           </button>
         </form>
       </section>
-
-      <aside className="section">
-        <section className="section-band">
-          <h2>Dispatch</h2>
-          <div className="kv-grid single-column">
-            <div className="kv">
-              <small>Mode</small>
-              <strong>{stream ? "stream" : "non-stream"}</strong>
-            </div>
-            <div className="kv">
-              <small>Gateway key</small>
-              <strong>{hasChatApiKey ? "configured" : "missing"}</strong>
-            </div>
-            <div className="kv">
-              <small>Trace target</small>
-              <strong>predeclared Run ID</strong>
-            </div>
-          </div>
-        </section>
-      </aside>
     </div>
   );
 }

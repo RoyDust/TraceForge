@@ -59,18 +59,18 @@ export default async function EvalsPage({ searchParams }: { searchParams: Search
     ]);
   } catch (error) {
     console.error(error);
-    readError = "无法读取 Eval 数据。请确认数据库连接可用。";
+    readError = "无法读取评测数据。请确认数据库连接可用。";
   }
 
   return (
     <main>
       <header className="page-head">
         <div>
-          <p className="eyebrow">Stage 6 Eval</p>
-          <h1>Eval 回归评测</h1>
-          <p className="muted">把 PromptVersion 变成可重复验证的上线闸门。</p>
+          <p className="eyebrow">第 6 阶段 · 评测</p>
+          <h1>回归评测</h1>
+          <p className="muted">把提示词版本变成可重复验证的上线闸门。</p>
         </div>
-        <span className="badge">{formatNumber(datasets.length)} datasets</span>
+        <span className="badge">{formatNumber(datasets.length)} 个数据集</span>
       </header>
 
       <form className="filter-form prompt-filter" method="get">
@@ -103,13 +103,13 @@ export default async function EvalsPage({ searchParams }: { searchParams: Search
           <section className="section">
             <div className="section-heading">
               <div>
-                <h2>Dataset 列表</h2>
-                <p className="muted">每个 Dataset 是一组可复跑的 Prompt 回归样本。</p>
+                <h2>数据集列表</h2>
+                <p className="muted">每个数据集是一组可复跑的提示词回归样本。</p>
               </div>
             </div>
             {datasets.length === 0 ? (
               <div className="empty-state">
-                <h3>还没有 EvalDataset</h3>
+                <h3>还没有评测数据集</h3>
                 <p className="muted">运行 `node scripts/stage6-demo.mjs` 生成样例，或在右侧创建。</p>
               </div>
             ) : (
@@ -117,12 +117,12 @@ export default async function EvalsPage({ searchParams }: { searchParams: Search
                 <table>
                   <thead>
                     <tr>
-                      <th>Name</th>
-                      <th>Project</th>
-                      <th>Cases</th>
-                      <th>Runs</th>
-                      <th>Latest</th>
-                      <th>Created</th>
+                      <th>名称</th>
+                      <th>项目</th>
+                      <th>样本</th>
+                      <th>运行</th>
+                      <th>最新结果</th>
+                      <th>创建时间</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -144,7 +144,7 @@ export default async function EvalsPage({ searchParams }: { searchParams: Search
                           <td>
                             {run ? (
                               <Link className="row-link" href={`/evals/runs/${run.id}`}>
-                                {run.promptVersion?.prompt.name ?? "Prompt"} · {formatPercent(passRate(run.results))}
+                                {run.promptVersion?.prompt.name ?? "提示词"} · {formatPercent(passRate(run.results))}
                               </Link>
                             ) : (
                               "—"
@@ -162,7 +162,7 @@ export default async function EvalsPage({ searchParams }: { searchParams: Search
 
           <aside className="section">
             <section className="section-band">
-              <h2>创建 Dataset</h2>
+              <h2>创建数据集</h2>
               <form className="stack-form" action={createEvalDatasetAction}>
                 <label>
                   项目
@@ -176,13 +176,13 @@ export default async function EvalsPage({ searchParams }: { searchParams: Search
                 </label>
                 <label>
                   名称
-                  <input name="name" required placeholder="support-agent-regression" />
+                  <input name="name" required placeholder="客服智能体回归" />
                 </label>
                 <label>
                   描述
-                  <input name="description" placeholder="覆盖关键回复格式、JSON 和人工复核样本" />
+                  <input name="description" placeholder="覆盖关键回复格式、结构化输出和人工复核样本" />
                 </label>
-                <button type="submit">创建 Dataset</button>
+                <button type="submit">创建数据集</button>
               </form>
             </section>
           </aside>

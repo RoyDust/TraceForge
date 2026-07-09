@@ -196,7 +196,7 @@ async function callGateway({
   const body = (await response.json().catch(() => null)) as JsonObject | null;
   if (!response.ok) {
     const message = asObject(body?.error as Prisma.JsonValue | null).message;
-    throw new Error(typeof message === "string" ? message : `Gateway returned ${response.status}`);
+    throw new Error(typeof message === "string" ? message : `网关返回 HTTP ${response.status}`);
   }
   const choices = Array.isArray(body?.choices) ? body.choices : [];
   const output = choices
@@ -266,10 +266,10 @@ export async function runEvalDataset(prisma: PrismaClient, request: EvalRunReque
     prisma.modelConfig.findUnique({ where: { id: request.modelConfigId } }),
   ]);
 
-  if (!dataset) throw new Error("EvalDataset 不存在。");
-  if (!promptVersion) throw new Error("PromptVersion 不存在。");
-  if (!modelConfig) throw new Error("ModelConfig 不存在。");
-  if (dataset.cases.length === 0) throw new Error("EvalDataset 至少需要一个 EvalCase。");
+  if (!dataset) throw new Error("评测数据集不存在。");
+  if (!promptVersion) throw new Error("提示词版本不存在。");
+  if (!modelConfig) throw new Error("模型配置不存在。");
+  if (dataset.cases.length === 0) throw new Error("评测数据集至少需要一个评测样本。");
 
   const run = await prisma.evalRun.create({
     data: {

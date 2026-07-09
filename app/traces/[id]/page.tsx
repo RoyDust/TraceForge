@@ -56,6 +56,37 @@ function badgeClass(value: string | null | undefined) {
   return value ? `badge ${value}` : "badge";
 }
 
+function statusLabel(status: string | null | undefined) {
+  if (status === "success") return "成功";
+  if (status === "running") return "运行中";
+  if (status === "failed") return "失败";
+  if (status === "cancelled") return "已取消";
+  return status ?? "未知";
+}
+
+function spanTypeLabel(type: string) {
+  if (type === "llm") return "模型";
+  if (type === "tool") return "工具";
+  if (type === "workflow") return "流程";
+  if (type === "gateway") return "网关";
+  return type;
+}
+
+function usageSourceLabel(source: string | null | undefined) {
+  if (source === "provider") return "供应商";
+  if (source === "estimated") return "估算";
+  return source ?? "—";
+}
+
+function eventTypeLabel(type: string) {
+  if (type === "fallback_triggered") return "触发备用切换";
+  if (type === "fallback_failed") return "备用切换失败";
+  if (type === "stream_interrupted") return "流式中断";
+  if (type === "first_token") return "首个 Token";
+  if (type === "stream_end") return "流式结束";
+  return type;
+}
+
 function domainBadge(domain: ResponsibilityDomain | null) {
   if (!domain) return null;
   return (
@@ -117,8 +148,8 @@ function SpanCard({
       <summary className="span-summary">
         <span className="span-title">
           <strong>{node.name}</strong>
-          <span className="badge">{node.type}</span>
-          <span className={badgeClass(node.status)}>{node.status}</span>
+          <span className="badge">{spanTypeLabel(node.type)}</span>
+          <span className={badgeClass(node.status)}>{statusLabel(node.status)}</span>
           {node.errorCode ? <code>{node.errorCode}</code> : null}
           {domainBadge(domain)}
           {node.id === slowestId ? <span className="badge slowest">最慢</span> : null}
@@ -129,35 +160,35 @@ function SpanCard({
       <div className="span-body">
         <div className="kv-grid">
           <div className="kv">
-            <small>Model</small>
+            <small>模型</small>
             <strong>{node.model ?? "—"}</strong>
           </div>
           <div className="kv">
-            <small>Provider</small>
+            <small>供应商</small>
             <strong>{node.provider ?? "—"}</strong>
           </div>
           <div className="kv">
-            <small>Latency</small>
+            <small>延迟</small>
             <strong>{formatMs(node.latencyMs)}</strong>
           </div>
           <div className="kv">
-            <small>Cost</small>
+            <small>成本</small>
             <strong>{formatMoney(node.cost)}</strong>
           </div>
           <div className="kv">
-            <small>Prompt Tokens</small>
+            <small>提示词令牌</small>
             <strong>{formatNumber(node.promptTokens)}</strong>
           </div>
           <div className="kv">
-            <small>Completion Tokens</small>
+            <small>补全令牌</small>
             <strong>{formatNumber(node.completionTokens)}</strong>
           </div>
           <div className="kv">
-            <small>Usage Source</small>
-            <strong>{node.usageSource ?? "—"}</strong>
+            <small>用量来源</small>
+            <strong>{usageSourceLabel(node.usageSource)}</strong>
           </div>
           <div className="kv">
-            <small>Started</small>
+            <small>开始时间</small>
             <strong>{formatDate(node.startedAt)}</strong>
           </div>
         </div>
@@ -171,25 +202,25 @@ function SpanCard({
 
         <div className="preview-grid">
           <div>
-            <h3>Input Preview</h3>
+            <h3>输入预览</h3>
             <pre>{node.inputPreview ?? "—"}</pre>
           </div>
           <div>
-            <h3>Output Preview</h3>
+            <h3>输出预览</h3>
             <pre>{node.outputPreview ?? "—"}</pre>
           </div>
         </div>
 
         <div>
-          <h3>Events</h3>
+          <h3>事件</h3>
           {node.events.length === 0 ? (
-            <p className="muted">这个 Span 没有 TraceEvent。</p>
+            <p className="muted">这个调用跨度没有追踪事件。</p>
           ) : (
             <div className="event-list">
               {node.events.map((event) => (
                 <div className="event-row" key={event.id}>
                   <div>
-                    <strong>{event.type}</strong>
+                    <strong>{eventTypeLabel(event.type)}</strong>
                     <small className="muted">{formatDate(event.createdAt)}</small>
                   </div>
                   <pre>{jsonText(event.payload)}</pre>
@@ -221,7 +252,7 @@ function Waterfall({
   costliestId: string | null;
 }) {
   if (spans.length === 0) {
-    return <p className="muted">没有 Span 可绘制瀑布。</p>;
+    return <p className="muted">没有调用跨度可绘制瀑布。</p>;
   }
 
   const starts = spans.map((span) => span.startedAt.getTime());
@@ -250,7 +281,7 @@ function Waterfall({
               <strong>{span.name}</strong>
               <small className="muted">{span.model ?? span.type}</small>
             </span>
-            <div className="waterfall-track" aria-label={`${span.name} duration ${formatMs(duration(span))}`}>
+            <div className="waterfall-track" aria-label={`${span.name} 耗时 ${formatMs(duration(span))}`}>
               <span className={classes} style={{ left: `${left}%`, width: `${width}%` }} />
             </div>
             <span>{formatMs(duration(span))}</span>
@@ -298,14 +329,14 @@ export default async function TraceDetailPage({
     });
   } catch (error) {
     console.error(error);
-    readError = "无法读取 TraceRun 详情。请确认数据库连接和迁移状态。";
+    readError = "无法读取追踪运行详情。请确认数据库连接和迁移状态。";
   }
 
   if (readError) {
     return (
       <main>
         <Link className="back-link" href="/traces">
-          返回 TraceRuns
+          返回追踪运行
         </Link>
         <section className="error-state" role="alert">
           <h1>读取失败</h1>
@@ -320,13 +351,13 @@ export default async function TraceDetailPage({
       return (
         <main>
           <Link className="back-link" href="/traces">
-            返回 TraceRuns
+            返回追踪运行
           </Link>
           <section className="empty-state">
-            <p className="eyebrow">TraceRun Pending</p>
-            <h1>正在等待 Gateway 接受请求</h1>
+            <p className="eyebrow">追踪运行待接收</p>
+            <h1>正在等待网关接受请求</h1>
             <p className="muted">
-              Console 已经预声明 Run ID：{id}。如果 Gateway 接受请求，这里会自动切换到 running TraceRun。
+              控制台已经预声明运行 ID：{id}。如果网关接受请求，这里会自动切换到运行中的追踪运行。
             </p>
             <TraceAutoRefresh timeoutMs={20000} />
           </section>
@@ -337,11 +368,11 @@ export default async function TraceDetailPage({
     return (
       <main>
         <Link className="back-link" href="/traces">
-          返回 TraceRuns
+          返回追踪运行
         </Link>
         <section className="empty-state">
-          <h1>没有找到这个 TraceRun</h1>
-          <p className="muted">Run 可能已被清理，或 URL 中的 id 不属于当前数据库。</p>
+          <h1>没有找到这个追踪运行</h1>
+          <p className="muted">运行可能已被清理，或 URL 中的 id 不属于当前数据库。</p>
         </section>
       </main>
     );
@@ -362,30 +393,30 @@ export default async function TraceDetailPage({
   return (
     <main>
       <Link className="back-link" href="/traces">
-        返回 TraceRuns
+        返回追踪运行
       </Link>
       <header className="page-head">
         <div>
-          <p className="eyebrow">TraceRun Detail</p>
+          <p className="eyebrow">追踪运行详情</p>
           <h1>
             {run.name ?? "unnamed"} · {compactId(run.id)}
           </h1>
           <p className="muted">{run.project.name} · {run.id}</p>
         </div>
-        <span className={badgeClass(run.status)}>{run.status}</span>
+        <span className={badgeClass(run.status)}>{statusLabel(run.status)}</span>
       </header>
 
       {shouldRefresh ? (
         <section className="section-band domain-note">
           <h2>调用仍在进行</h2>
-          <p className="muted">TraceRun 还没有进入终态，页面会自动刷新直到成功、失败或取消。</p>
+          <p className="muted">追踪运行还没有进入终态，页面会自动刷新直到成功、失败或取消。</p>
           <TraceAutoRefresh />
         </section>
       ) : null}
 
-      <section className="summary-grid" aria-label="Run 摘要">
+      <section className="summary-grid" aria-label="运行摘要">
         <div className="summary-cell">
-          <small>Error Code</small>
+          <small>错误码</small>
           <strong>{run.errorCode ?? "—"}</strong>
         </div>
         <div className="summary-cell">
@@ -393,27 +424,27 @@ export default async function TraceDetailPage({
           <strong>{domainBadge(domain) ?? "—"}</strong>
         </div>
         <div className="summary-cell">
-          <small>Latency</small>
+          <small>延迟</small>
           <strong>{formatMs(run.latencyMs)}</strong>
         </div>
         <div className="summary-cell">
-          <small>Total Tokens</small>
+          <small>总令牌</small>
           <strong>{formatNumber(run.totalTokens)}</strong>
         </div>
         <div className="summary-cell">
-          <small>Cost</small>
+          <small>成本</small>
           <strong>{formatMoney(run.cost)}</strong>
         </div>
         <div className="summary-cell">
-          <small>Usage Source</small>
-          <strong>{run.usageSource ?? "—"}</strong>
+          <small>用量来源</small>
+          <strong>{usageSourceLabel(run.usageSource)}</strong>
         </div>
         <div className="summary-cell">
-          <small>Started</small>
+          <small>开始时间</small>
           <strong>{formatFullDate(run.startedAt)}</strong>
         </div>
         <div className="summary-cell">
-          <small>Ended</small>
+          <small>结束时间</small>
           <strong>{formatFullDate(run.endedAt)}</strong>
         </div>
       </section>
@@ -427,12 +458,12 @@ export default async function TraceDetailPage({
 
       <div className="detail-grid">
         <section className="section">
-          <h2>Span Tree</h2>
+          <h2>调用树</h2>
           {tree.length === 0 ? (
             <div className="empty-state">
-              <h3>{run.status === TraceStatus.running ? "等待上游 Span 写入" : "这个 Run 没有上游 Span"}</h3>
+              <h3>{run.status === TraceStatus.running ? "等待上游调用跨度写入" : "这个运行没有上游调用跨度"}</h3>
               <p className="muted">
-                {run.status === TraceStatus.running ? "Gateway 已接受请求，完成后会补齐 Span 和输出证据。" : "这通常是鉴权、撤销 Key 或限流等网关层拒绝。"}
+                {run.status === TraceStatus.running ? "网关已接受请求，完成后会补齐调用跨度和输出证据。" : "这通常是鉴权、撤销 Key 或限流等网关层拒绝。"}
               </p>
             </div>
           ) : (
@@ -446,7 +477,7 @@ export default async function TraceDetailPage({
 
         <aside className="section">
           <section className="section-band">
-            <h2>Prompt Version</h2>
+            <h2>提示词版本</h2>
             {run.promptVersion ? (
               <div className="meta-stack">
                 <Link className="row-link" href={`/prompts/${run.promptVersion.prompt.id}?compare=${run.promptVersion.version}`}>
@@ -454,28 +485,28 @@ export default async function TraceDetailPage({
                 </Link>
                 <span>
                   <span className={`badge ${run.promptVersion.prompt.activeVersionId === run.promptVersion.id ? "provider" : ""}`}>
-                    {run.promptVersion.prompt.activeVersionId === run.promptVersion.id ? "active" : run.promptVersion.status}
+                    {run.promptVersion.prompt.activeVersionId === run.promptVersion.id ? "现行" : run.promptVersion.status}
                   </span>
                 </span>
-                <small className="muted">TraceRun.prompt_version_id = {run.promptVersion.id}</small>
+                <small className="muted">追踪运行提示词版本编号 = {run.promptVersion.id}</small>
               </div>
             ) : (
-              <p className="muted">这个 Run 没有关联 PromptVersion。</p>
+              <p className="muted">这个运行没有关联提示词版本。</p>
             )}
           </section>
           <section className="section-band">
-            <h2>Waterfall</h2>
+            <h2>瀑布图</h2>
             <Waterfall spans={run.spans} slowestId={slowest?.id ?? null} costliestId={costliest?.id ?? null} />
           </section>
           <section className="section-band">
-            <h2>Run Preview</h2>
+            <h2>运行预览</h2>
             <div className="preview-grid single">
               <div>
-                <h3>Input Preview</h3>
+                <h3>输入预览</h3>
                 <pre>{run.inputPreview ?? "—"}</pre>
               </div>
               <div>
-                <h3>Output Preview</h3>
+                <h3>输出预览</h3>
                 <pre>{run.outputPreview ?? "—"}</pre>
               </div>
             </div>

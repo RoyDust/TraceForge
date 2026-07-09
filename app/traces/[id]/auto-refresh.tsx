@@ -29,10 +29,10 @@ export function TraceAutoRefresh({
   if (timedOut) {
     return (
       <p className="form-error" role="alert">
-        Gateway 未接受请求或后台派发失败，请回到 Chat 重新发送。
+        网关未接受请求或后台派发失败，请回到对话调试台重新发送。
       </p>
     );
   }
 
-  return <p className="muted live-refresh">自动刷新中，等待 TraceRun 进入终态。</p>;
+  return <p className="muted live-refresh">自动刷新中，等待追踪运行进入终态。</p>;
 }

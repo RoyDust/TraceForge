@@ -5,6 +5,48 @@
 >
 > 当前状态：数据契约（Prisma schema）+ seed + 最小 sqlx 示例 + CI 已落地。
 
+---
+
+# UI 高保真改造计划 · Round 2 原型落地
+
+> 原型目录：`docs/ui-redesign/`
+> 详细计划：`docs/ui-redesign/UI_REDESIGN_PLAN.md`
+> 目标：用 Round 2 三张图作为高保真目标，把当前控制台改成 V1 主壳 + V2 密集治理面板 + V3 Prompt/Eval Regression Studio。缺失数据只走 mock/view-model 层，不提前污染生产 schema。
+
+## 计划（每项 → 验证）
+
+- [x] **1. 设计基础层**
+  - 抽出 console shell、top command bar、metric strip、badge、filter bar、dense table、governance rail、waterfall/span tree、prompt diff、heatmap 等组件。
+  - → 验证：现有页面仍能 build，组件可在至少一个页面复用。
+- [x] **2. mock/view-model 层**
+  - 新增确定性的 UI mock 数据与聚合 helper；真实数据优先，缺失字段才 mock。
+  - → 验证：空库/少量数据也能渲染高保真 prototype state，mock 不写库。
+- [x] **3. 全局壳改造**
+  - 统一深绿 sidebar、紧凑顶栏和支持的导航项；先不展示 Alerts。
+  - → 验证：Dashboard、Chat、TraceRuns、Prompt、Eval 路由都可达。
+- [x] **4. Incident Command Trace 屏**
+  - `/traces` 与 `/traces/[id]` 改成 TraceRun 列表 + 详情 + Waterfall/Span Tree + Live governance rail。
+  - → 验证：Stage 3 demo 可演示“筛失败 → 看链路 → 定责任域”。
+- [x] **5. Live Governance Dashboard**
+  - `/dashboard` 改成顶部 KPI strip、密集 TraceRun 表、右侧治理 rail、底部 UsageDaily 与模型成本拆分。
+  - → 验证：Stage 4 demo + UsageDaily 聚合后数值可对上。
+- [x] **6. Regression Studio**
+  - Prompt/Eval 页面改成 baseline/candidate diff、Eval evidence rail、assertion matrix、compare runs。
+  - → 验证：Stage 5/6 demo 可比较 PromptVersion 与 EvalRun。
+- [x] **7. 响应式与验收**
+  - 检查 1440、1280、980、390 宽度；修复溢出、重叠、空态、错误态。
+  - → 验证：`npm run build`、`npx prisma validate`、手动视觉对照三张 Round 2 原型。
+
+## UI 改造 Review（进行中）
+
+- 已完成 shadcn/ui 初始化并安装全量组件到 `components/ui/`，自定义组合组件放在 `components/traceforge/`。
+- 已完成全局控制台壳：深绿 sidebar、紧凑 top command bar、真实路由导航（Dashboard / Chat / TraceRuns / Prompt / Eval），未暴露 Alerts。
+- 已完成 `/dashboard` 高保真第一版：V2 KPI strip、密集 TraceRun 表、选中详情、Live governance rail、UsageDaily 和模型成本拆分；真实数据优先，缺失展示字段用确定性 mock。
+- 已完成 `/traces` Incident Command 工作台：TraceRun 队列、失败/运行/慢请求分组、同屏选中详情、Waterfall、Span Tree、责任域 rail、fallback/rate-limit/provider health/slowest/costliest 证据。
+- 已完成 `/prompts/[id]` Regression Studio 工作区：baseline/candidate 选择、双栏 diff、Run eval、Promote/Rollback、Eval summary rail、failed cases、Trace evidence、assertion matrix、compare runs、recent EvalRun。
+- 验证通过：`npm run build`、`npx prisma validate`；浏览器截图见 `docs/ui-redesign/verification/dashboard-r6.png`、`docs/ui-redesign/verification/traces-incident-r3.png`、`docs/ui-redesign/verification/regression-studio-r1.png`。
+- 已完成 1440 / 1280 / 980 / 390 宽度浏览器验收：最终截图与报告在 `docs/ui-redesign/verification/responsive/`，三条真实页面的页面级 `overflowX=0`；Dashboard / Trace / Regression Studio 均可通过 `data-source` 审计 mock/derived 数据。
+
 ## 目标与验收
 
 本地两个进程跑起来：

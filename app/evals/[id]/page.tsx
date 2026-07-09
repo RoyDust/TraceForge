@@ -33,8 +33,26 @@ function jsonText(value: Prisma.JsonValue | null | undefined) {
   return JSON.stringify(value, null, 2);
 }
 
+const ASSERTION_LABELS: Record<AssertionType, string> = {
+  [AssertionType.exact_match]: "精确匹配",
+  [AssertionType.contains]: "包含",
+  [AssertionType.regex]: "正则",
+  [AssertionType.json_schema]: "JSON 结构",
+  [AssertionType.llm_judge]: "模型裁判",
+  [AssertionType.manual_review]: "人工复核",
+};
+
 function assertionLabel(type: AssertionType) {
-  return type.replace("_", " ");
+  return ASSERTION_LABELS[type];
+}
+
+function evalStatusLabel(status: string | null | undefined) {
+  if (status === "completed") return "已完成";
+  if (status === "running") return "运行中";
+  if (status === "failed") return "失败";
+  if (status === "needs_review") return "需复核";
+  if (status === "pending") return "待处理";
+  return status ?? "未知";
 }
 
 export default async function EvalDatasetPage({ params }: { params: Params }) {
@@ -76,14 +94,14 @@ export default async function EvalDatasetPage({ params }: { params: Params }) {
     }
   } catch (error) {
     console.error(error);
-    readError = "无法读取 EvalDataset。请确认数据库连接可用。";
+    readError = "无法读取评测数据集。请确认数据库连接可用。";
   }
 
   if (readError) {
     return (
       <main>
         <Link className="back-link" href="/evals">
-          返回 Evals
+          返回评测
         </Link>
         <section className="error-state" role="alert">
           <h1>读取失败</h1>
@@ -97,11 +115,11 @@ export default async function EvalDatasetPage({ params }: { params: Params }) {
     return (
       <main>
         <Link className="back-link" href="/evals">
-          返回 Evals
+          返回评测
         </Link>
         <section className="empty-state">
-          <h1>没有找到这个 EvalDataset</h1>
-          <p className="muted">Dataset 可能已删除，或 URL 中的 id 不属于当前数据库。</p>
+          <h1>没有找到这个评测数据集</h1>
+          <p className="muted">数据集可能已删除，或 URL 中的 id 不属于当前数据库。</p>
         </section>
       </main>
     );
@@ -110,39 +128,39 @@ export default async function EvalDatasetPage({ params }: { params: Params }) {
   const promptVersions = prompts.flatMap((prompt) =>
     prompt.versions.map((version) => ({
       ...version,
-      label: `${prompt.name} · v${version.version}${prompt.activeVersionId === version.id ? " · active" : ""}`,
+      label: `${prompt.name} · v${version.version}${prompt.activeVersionId === version.id ? " · 现行" : ""}`,
     })),
   );
 
   return (
     <main>
       <Link className="back-link" href="/evals">
-        返回 Evals
+        返回评测
       </Link>
       <header className="page-head">
         <div>
-          <p className="eyebrow">Eval Dataset</p>
+          <p className="eyebrow">评测数据集</p>
           <h1>{dataset.name}</h1>
           <p className="muted">{dataset.project.name} · {dataset.description ?? "无描述"}</p>
         </div>
-        <span className="badge">{formatNumber(dataset.cases.length)} cases</span>
+        <span className="badge">{formatNumber(dataset.cases.length)} 个样本</span>
       </header>
 
       <section className="summary-grid">
         <div className="summary-cell">
-          <small>Dataset ID</small>
+          <small>数据集 ID</small>
           <strong>{compactId(dataset.id)}</strong>
         </div>
         <div className="summary-cell">
-          <small>Cases</small>
+          <small>样本</small>
           <strong>{formatNumber(dataset.cases.length)}</strong>
         </div>
         <div className="summary-cell">
-          <small>Runs</small>
+          <small>运行</small>
           <strong>{formatNumber(dataset.runs.length)}</strong>
         </div>
         <div className="summary-cell">
-          <small>Created</small>
+          <small>创建时间</small>
           <strong>{formatDate(dataset.createdAt)}</strong>
         </div>
       </section>
@@ -151,24 +169,24 @@ export default async function EvalDatasetPage({ params }: { params: Params }) {
         <section className="section">
           <div className="section-heading">
             <div>
-              <h2>EvalCase</h2>
-              <p className="muted">Case 定义输入、期望和断言方式；跑批后不会改写 Case。</p>
+              <h2>评测样本</h2>
+              <p className="muted">样本定义输入、期望和断言方式；跑批后不会改写样本。</p>
             </div>
           </div>
           {dataset.cases.length === 0 ? (
             <div className="empty-state">
-              <h3>还没有 Case</h3>
-              <p className="muted">先添加至少一个 Case，再运行 EvalRun。</p>
+              <h3>还没有样本</h3>
+              <p className="muted">先添加至少一个样本，再运行评测。</p>
             </div>
           ) : (
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Input</th>
-                    <th>Assertion</th>
-                    <th>Expected</th>
-                    <th>Tags</th>
+                    <th>输入</th>
+                    <th>断言</th>
+                    <th>期望</th>
+                    <th>标签</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -191,7 +209,7 @@ export default async function EvalDatasetPage({ params }: { params: Params }) {
           )}
 
           <section className="section-band prompt-block">
-            <h2>历史 EvalRun</h2>
+            <h2>历史评测运行</h2>
             {dataset.runs.length === 0 ? (
               <p className="muted">还没有运行记录。</p>
             ) : (
@@ -199,13 +217,13 @@ export default async function EvalDatasetPage({ params }: { params: Params }) {
                 <table>
                   <thead>
                     <tr>
-                      <th>Run</th>
-                      <th>Prompt</th>
-                      <th>Model</th>
-                      <th>Pass Rate</th>
-                      <th>Score</th>
-                      <th>Cost</th>
-                      <th>Duration</th>
+                      <th>运行</th>
+                      <th>提示词</th>
+                      <th>模型</th>
+                      <th>通过率</th>
+                      <th>得分</th>
+                      <th>成本</th>
+                      <th>耗时</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -213,7 +231,7 @@ export default async function EvalDatasetPage({ params }: { params: Params }) {
                       <tr key={run.id}>
                         <td>
                           <Link className="row-link" href={`/evals/runs/${run.id}`}>
-                            {run.status} · {compactId(run.id)}
+                            {evalStatusLabel(run.status)} · {compactId(run.id)}
                           </Link>
                         </td>
                         <td>{run.promptVersion ? `${run.promptVersion.prompt.name} v${run.promptVersion.version}` : "—"}</td>
@@ -233,11 +251,11 @@ export default async function EvalDatasetPage({ params }: { params: Params }) {
 
         <aside className="section">
           <section className="section-band">
-            <h2>运行 Eval</h2>
+            <h2>运行评测</h2>
             <form className="stack-form" action={runEvalDatasetAction}>
               <input type="hidden" name="datasetId" value={dataset.id} />
               <label>
-                PromptVersion
+                提示词版本
                 <select name="promptVersionId" required defaultValue={promptVersions[0]?.id ?? ""}>
                   {promptVersions.map((version) => (
                     <option key={version.id} value={version.id}>
@@ -247,7 +265,7 @@ export default async function EvalDatasetPage({ params }: { params: Params }) {
                 </select>
               </label>
               <label>
-                ModelConfig
+                模型配置
                 <select name="modelConfigId" required defaultValue={models[0]?.id ?? ""}>
                   {models.map((model) => (
                     <option key={model.id} value={model.id}>
@@ -257,13 +275,13 @@ export default async function EvalDatasetPage({ params }: { params: Params }) {
                 </select>
               </label>
               <button type="submit" disabled={dataset.cases.length === 0 || promptVersions.length === 0 || models.length === 0}>
-                运行 EvalRun
+                运行评测
               </button>
             </form>
           </section>
 
           <section className="section-band">
-            <h2>添加 Case</h2>
+            <h2>添加样本</h2>
             <form className="stack-form" action={createEvalCaseAction}>
               <input type="hidden" name="datasetId" value={dataset.id} />
               <label>
@@ -285,14 +303,14 @@ export default async function EvalDatasetPage({ params }: { params: Params }) {
                 </select>
               </label>
               <label>
-                断言配置 JSON
+                断言配置
                 <textarea name="assertionConfig" rows={6} placeholder='{"contains":["hello"],"pass_keywords":["safe"]}' />
               </label>
               <label>
-                Tags
-                <input name="tags" placeholder="safety, json, smoke" />
+                标签
+                <input name="tags" placeholder="安全, 结构化, 冒烟" />
               </label>
-              <button type="submit">添加 Case</button>
+              <button type="submit">添加样本</button>
             </form>
           </section>
 

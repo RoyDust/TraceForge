@@ -1,0 +1,1370 @@
+[
+  {
+    "route": "dashboard",
+    "size": "1440",
+    "url": "/dashboard",
+    "viewport": 1440,
+    "scrollWidth": 1440,
+    "overflowX": 0,
+    "sourceCounts": {
+      "mock": 2,
+      "derived": 7
+    },
+    "offenderNodes": [],
+    "horizontalScrollRegions": [
+      {
+        "className": "tf-table-shell",
+        "clientWidth": 840,
+        "scrollWidth": 840,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 840,
+        "scrollWidth": 840,
+        "scrollable": false
+      },
+      {
+        "className": "tf-table-shell compact",
+        "clientWidth": 462,
+        "scrollWidth": 462,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 462,
+        "scrollWidth": 840,
+        "scrollable": true
+      }
+    ],
+    "keyBoxes": [
+      {
+        "selector": ".console-shell",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 1337,
+          "right": 1440
+        }
+      },
+      {
+        "selector": ".sidebar",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 148,
+          "height": 1040,
+          "right": 148
+        }
+      },
+      {
+        "selector": ".console-topbar",
+        "rect": {
+          "x": 148,
+          "y": 0,
+          "width": 1292,
+          "height": 50,
+          "right": 1440
+        }
+      },
+      {
+        "selector": ".console-content",
+        "rect": {
+          "x": 148,
+          "y": 50,
+          "width": 1292,
+          "height": 1287,
+          "right": 1440
+        }
+      },
+      {
+        "selector": ".tf-ops-grid",
+        "rect": {
+          "x": 172,
+          "y": 325,
+          "width": 1244,
+          "height": 987,
+          "right": 1416
+        }
+      }
+    ]
+  },
+  {
+    "route": "dashboard",
+    "size": "1280",
+    "url": "/dashboard",
+    "viewport": 1280,
+    "scrollWidth": 1280,
+    "overflowX": 0,
+    "sourceCounts": {
+      "mock": 2,
+      "derived": 7
+    },
+    "offenderNodes": [
+      {
+        "tag": "table",
+        "className": "w-full caption-bottom text-sm tf-dense-table",
+        "text": "ModelRequestsTokensCost% costmock-ok58373$0.00054444.9%mock-slow4264$0.00050841.",
+        "right": 1362,
+        "left": 522,
+        "width": 840,
+        "parentClass": "relative w-full overflow-x-auto",
+        "parentOverflowX": "auto"
+      },
+      {
+        "tag": "thead",
+        "className": "[&_tr]:border-b",
+        "text": "ModelRequestsTokensCost% cost",
+        "right": 1362,
+        "left": 522,
+        "width": 840,
+        "parentClass": "w-full caption-bottom text-sm tf-dense-table",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "tr",
+        "className": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "text": "ModelRequestsTokensCost% cost",
+        "right": 1362,
+        "left": 522,
+        "width": 840,
+        "parentClass": "[&_tr]:border-b",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "th",
+        "className": "h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0",
+        "text": "% cost",
+        "right": 1362,
+        "left": 1236,
+        "width": 126,
+        "parentClass": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "tbody",
+        "className": "[&_tr:last-child]:border-0",
+        "text": "mock-ok58373$0.00054444.9%mock-slow4264$0.00050841.9%mock-mid971$0.000080006.6%m",
+        "right": 1362,
+        "left": 522,
+        "width": 840,
+        "parentClass": "w-full caption-bottom text-sm tf-dense-table",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "tr",
+        "className": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "text": "mock-ok58373$0.00054444.9%",
+        "right": 1362,
+        "left": 522,
+        "width": 840,
+        "parentClass": "[&_tr:last-child]:border-0",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "td",
+        "className": "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0",
+        "text": "44.9%",
+        "right": 1362,
+        "left": 1236,
+        "width": 126,
+        "parentClass": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "tr",
+        "className": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "text": "mock-slow4264$0.00050841.9%",
+        "right": 1362,
+        "left": 522,
+        "width": 840,
+        "parentClass": "[&_tr:last-child]:border-0",
+        "parentOverflowX": "visible"
+      }
+    ],
+    "horizontalScrollRegions": [
+      {
+        "className": "tf-table-shell",
+        "clientWidth": 680,
+        "scrollWidth": 680,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 680,
+        "scrollWidth": 840,
+        "scrollable": true
+      },
+      {
+        "className": "tf-table-shell compact",
+        "clientWidth": 384,
+        "scrollWidth": 384,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 384,
+        "scrollWidth": 840,
+        "scrollable": true
+      }
+    ],
+    "keyBoxes": [
+      {
+        "selector": ".console-shell",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 1457,
+          "right": 1280
+        }
+      },
+      {
+        "selector": ".sidebar",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 148,
+          "height": 960,
+          "right": 148
+        }
+      },
+      {
+        "selector": ".console-topbar",
+        "rect": {
+          "x": 148,
+          "y": 0,
+          "width": 1132,
+          "height": 50,
+          "right": 1280
+        }
+      },
+      {
+        "selector": ".console-content",
+        "rect": {
+          "x": 148,
+          "y": 50,
+          "width": 1132,
+          "height": 1407,
+          "right": 1280
+        }
+      },
+      {
+        "selector": ".tf-ops-grid",
+        "rect": {
+          "x": 172,
+          "y": 342,
+          "width": 1084,
+          "height": 1090,
+          "right": 1256
+        }
+      }
+    ]
+  },
+  {
+    "route": "dashboard",
+    "size": "980",
+    "url": "/dashboard",
+    "viewport": 980,
+    "scrollWidth": 980,
+    "overflowX": 0,
+    "sourceCounts": {
+      "mock": 2,
+      "derived": 7
+    },
+    "offenderNodes": [],
+    "horizontalScrollRegions": [
+      {
+        "className": "tf-table-shell",
+        "clientWidth": 935,
+        "scrollWidth": 935,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 935,
+        "scrollWidth": 935,
+        "scrollable": false
+      },
+      {
+        "className": "tf-table-shell compact",
+        "clientWidth": 901,
+        "scrollWidth": 901,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 901,
+        "scrollWidth": 901,
+        "scrollable": false
+      }
+    ],
+    "keyBoxes": [
+      {
+        "selector": ".console-shell",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 980,
+          "height": 3465,
+          "right": 980
+        }
+      },
+      {
+        "selector": ".sidebar",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 980,
+          "height": 188,
+          "right": 980
+        }
+      },
+      {
+        "selector": ".console-topbar",
+        "rect": {
+          "x": 0,
+          "y": 188,
+          "width": 980,
+          "height": 50,
+          "right": 980
+        }
+      },
+      {
+        "selector": ".console-content",
+        "rect": {
+          "x": 0,
+          "y": 238,
+          "width": 980,
+          "height": 3227,
+          "right": 980
+        }
+      },
+      {
+        "selector": ".tf-ops-grid",
+        "rect": {
+          "x": 22,
+          "y": 1086,
+          "width": 937,
+          "height": 2357,
+          "right": 958
+        }
+      }
+    ]
+  },
+  {
+    "route": "dashboard",
+    "size": "390",
+    "url": "/dashboard",
+    "viewport": 390,
+    "scrollWidth": 390,
+    "overflowX": 0,
+    "sourceCounts": {
+      "mock": 2,
+      "derived": 7
+    },
+    "offenderNodes": [
+      {
+        "tag": "table",
+        "className": "w-full caption-bottom text-sm tf-dense-table",
+        "text": "ModelRequestsTokensCost% costmock-ok58373$0.00054444.9%mock-slow4264$0.00050841.",
+        "right": 870,
+        "left": 30,
+        "width": 840,
+        "parentClass": "relative w-full overflow-x-auto",
+        "parentOverflowX": "auto"
+      },
+      {
+        "tag": "thead",
+        "className": "[&_tr]:border-b",
+        "text": "ModelRequestsTokensCost% cost",
+        "right": 870,
+        "left": 30,
+        "width": 840,
+        "parentClass": "w-full caption-bottom text-sm tf-dense-table",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "tr",
+        "className": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "text": "ModelRequestsTokensCost% cost",
+        "right": 870,
+        "left": 30,
+        "width": 840,
+        "parentClass": "[&_tr]:border-b",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "th",
+        "className": "h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0",
+        "text": "% cost",
+        "right": 870,
+        "left": 744,
+        "width": 126,
+        "parentClass": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "tbody",
+        "className": "[&_tr:last-child]:border-0",
+        "text": "mock-ok58373$0.00054444.9%mock-slow4264$0.00050841.9%mock-mid971$0.000080006.6%m",
+        "right": 870,
+        "left": 30,
+        "width": 840,
+        "parentClass": "w-full caption-bottom text-sm tf-dense-table",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "tr",
+        "className": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "text": "mock-ok58373$0.00054444.9%",
+        "right": 870,
+        "left": 30,
+        "width": 840,
+        "parentClass": "[&_tr:last-child]:border-0",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "td",
+        "className": "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0",
+        "text": "44.9%",
+        "right": 870,
+        "left": 744,
+        "width": 126,
+        "parentClass": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "tr",
+        "className": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "text": "mock-slow4264$0.00050841.9%",
+        "right": 870,
+        "left": 30,
+        "width": 840,
+        "parentClass": "[&_tr:last-child]:border-0",
+        "parentOverflowX": "visible"
+      }
+    ],
+    "horizontalScrollRegions": [
+      {
+        "className": "tf-table-shell",
+        "clientWidth": 364,
+        "scrollWidth": 364,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 364,
+        "scrollWidth": 840,
+        "scrollable": true
+      },
+      {
+        "className": "tf-table-shell compact",
+        "clientWidth": 330,
+        "scrollWidth": 330,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 330,
+        "scrollWidth": 840,
+        "scrollable": true
+      }
+    ],
+    "keyBoxes": [
+      {
+        "selector": ".console-shell",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 4987,
+          "right": 390
+        }
+      },
+      {
+        "selector": ".sidebar",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 136,
+          "right": 390
+        }
+      },
+      {
+        "selector": ".console-topbar",
+        "rect": {
+          "x": 0,
+          "y": 136,
+          "width": 390,
+          "height": 173,
+          "right": 390
+        }
+      },
+      {
+        "selector": ".console-content",
+        "rect": {
+          "x": 0,
+          "y": 309,
+          "width": 390,
+          "height": 4678,
+          "right": 390
+        }
+      },
+      {
+        "selector": ".tf-ops-grid",
+        "rect": {
+          "x": 12,
+          "y": 1513,
+          "width": 366,
+          "height": 3462,
+          "right": 378
+        }
+      }
+    ]
+  },
+  {
+    "route": "traces",
+    "size": "1440",
+    "url": "/traces",
+    "viewport": 1440,
+    "scrollWidth": 1440,
+    "overflowX": 0,
+    "sourceCounts": {
+      "mock": 4,
+      "derived": 1
+    },
+    "offenderNodes": [],
+    "horizontalScrollRegions": [
+      {
+        "className": "tf-table-shell compact",
+        "clientWidth": 564,
+        "scrollWidth": 564,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 564,
+        "scrollWidth": 640,
+        "scrollable": true
+      }
+    ],
+    "keyBoxes": [
+      {
+        "selector": ".console-shell",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 1194,
+          "right": 1440
+        }
+      },
+      {
+        "selector": ".sidebar",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 148,
+          "height": 1040,
+          "right": 148
+        }
+      },
+      {
+        "selector": ".console-topbar",
+        "rect": {
+          "x": 148,
+          "y": 0,
+          "width": 1292,
+          "height": 50,
+          "right": 1440
+        }
+      },
+      {
+        "selector": ".console-content",
+        "rect": {
+          "x": 148,
+          "y": 50,
+          "width": 1292,
+          "height": 1144,
+          "right": 1440
+        }
+      },
+      {
+        "selector": ".tf-incident-layout",
+        "rect": {
+          "x": 172,
+          "y": 135,
+          "width": 1244,
+          "height": 1035,
+          "right": 1416
+        }
+      }
+    ]
+  },
+  {
+    "route": "traces",
+    "size": "1280",
+    "url": "/traces",
+    "viewport": 1280,
+    "scrollWidth": 1280,
+    "overflowX": 0,
+    "sourceCounts": {
+      "mock": 4,
+      "derived": 1
+    },
+    "offenderNodes": [],
+    "horizontalScrollRegions": [
+      {
+        "className": "tf-table-shell compact",
+        "clientWidth": 404,
+        "scrollWidth": 404,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 404,
+        "scrollWidth": 640,
+        "scrollable": true
+      }
+    ],
+    "keyBoxes": [
+      {
+        "selector": ".console-shell",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 1114,
+          "right": 1280
+        }
+      },
+      {
+        "selector": ".sidebar",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 148,
+          "height": 960,
+          "right": 148
+        }
+      },
+      {
+        "selector": ".console-topbar",
+        "rect": {
+          "x": 148,
+          "y": 0,
+          "width": 1132,
+          "height": 50,
+          "right": 1280
+        }
+      },
+      {
+        "selector": ".console-content",
+        "rect": {
+          "x": 148,
+          "y": 50,
+          "width": 1132,
+          "height": 1064,
+          "right": 1280
+        }
+      },
+      {
+        "selector": ".tf-incident-layout",
+        "rect": {
+          "x": 172,
+          "y": 135,
+          "width": 1084,
+          "height": 955,
+          "right": 1256
+        }
+      }
+    ]
+  },
+  {
+    "route": "traces",
+    "size": "980",
+    "url": "/traces",
+    "viewport": 980,
+    "scrollWidth": 980,
+    "overflowX": 0,
+    "sourceCounts": {
+      "mock": 4,
+      "derived": 1
+    },
+    "offenderNodes": [],
+    "horizontalScrollRegions": [
+      {
+        "className": "tf-table-shell compact",
+        "clientWidth": 901,
+        "scrollWidth": 901,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 901,
+        "scrollWidth": 901,
+        "scrollable": false
+      }
+    ],
+    "keyBoxes": [
+      {
+        "selector": ".console-shell",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 980,
+          "height": 4761,
+          "right": 980
+        }
+      },
+      {
+        "selector": ".sidebar",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 980,
+          "height": 188,
+          "right": 980
+        }
+      },
+      {
+        "selector": ".console-topbar",
+        "rect": {
+          "x": 0,
+          "y": 188,
+          "width": 980,
+          "height": 50,
+          "right": 980
+        }
+      },
+      {
+        "selector": ".console-content",
+        "rect": {
+          "x": 0,
+          "y": 238,
+          "width": 980,
+          "height": 4523,
+          "right": 980
+        }
+      },
+      {
+        "selector": ".tf-incident-layout",
+        "rect": {
+          "x": 22,
+          "y": 413,
+          "width": 937,
+          "height": 4326,
+          "right": 958
+        }
+      }
+    ]
+  },
+  {
+    "route": "traces",
+    "size": "390",
+    "url": "/traces",
+    "viewport": 390,
+    "scrollWidth": 390,
+    "overflowX": 0,
+    "sourceCounts": {
+      "mock": 4,
+      "derived": 1
+    },
+    "offenderNodes": [
+      {
+        "tag": "table",
+        "className": "w-full caption-bottom text-sm tf-dense-table tf-span-table",
+        "text": "NameTypeModel / ProviderStatusLatencyTokensCostmock-fail-aloneslowestcostliestll",
+        "right": 670,
+        "left": 30,
+        "width": 640,
+        "parentClass": "relative w-full overflow-x-auto",
+        "parentOverflowX": "auto"
+      },
+      {
+        "tag": "thead",
+        "className": "[&_tr]:border-b",
+        "text": "NameTypeModel / ProviderStatusLatencyTokensCost",
+        "right": 670,
+        "left": 30,
+        "width": 640,
+        "parentClass": "w-full caption-bottom text-sm tf-dense-table tf-span-table",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "tr",
+        "className": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "text": "NameTypeModel / ProviderStatusLatencyTokensCost",
+        "right": 670,
+        "left": 30,
+        "width": 640,
+        "parentClass": "[&_tr]:border-b",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "th",
+        "className": "h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0",
+        "text": "Cost",
+        "right": 670,
+        "left": 592,
+        "width": 78,
+        "parentClass": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "tbody",
+        "className": "[&_tr:last-child]:border-0",
+        "text": "mock-fail-aloneslowestcostliestllmMock Upstream / mock-fail-alonefailed模型244 ms5",
+        "right": 670,
+        "left": 30,
+        "width": 640,
+        "parentClass": "w-full caption-bottom text-sm tf-dense-table tf-span-table",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "tr",
+        "className": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted is-error",
+        "text": "mock-fail-aloneslowestcostliestllmMock Upstream / mock-fail-alonefailed模型244 ms5",
+        "right": 670,
+        "left": 30,
+        "width": 640,
+        "parentClass": "[&_tr:last-child]:border-0",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "td",
+        "className": "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0",
+        "text": "$0.00000500",
+        "right": 670,
+        "left": 592,
+        "width": 78,
+        "parentClass": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted is-error",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "th",
+        "className": "h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0",
+        "text": "Tokens",
+        "right": 592,
+        "left": 537,
+        "width": 55,
+        "parentClass": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "parentOverflowX": "visible"
+      }
+    ],
+    "horizontalScrollRegions": [
+      {
+        "className": "tf-table-shell compact",
+        "clientWidth": 330,
+        "scrollWidth": 330,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 330,
+        "scrollWidth": 640,
+        "scrollable": true
+      }
+    ],
+    "keyBoxes": [
+      {
+        "selector": ".console-shell",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 5890,
+          "right": 390
+        }
+      },
+      {
+        "selector": ".sidebar",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 136,
+          "right": 390
+        }
+      },
+      {
+        "selector": ".console-topbar",
+        "rect": {
+          "x": 0,
+          "y": 136,
+          "width": 390,
+          "height": 173,
+          "right": 390
+        }
+      },
+      {
+        "selector": ".console-content",
+        "rect": {
+          "x": 0,
+          "y": 309,
+          "width": 390,
+          "height": 5581,
+          "right": 390
+        }
+      },
+      {
+        "selector": ".tf-incident-layout",
+        "rect": {
+          "x": 12,
+          "y": 494,
+          "width": 366,
+          "height": 5385,
+          "right": 378
+        }
+      }
+    ]
+  },
+  {
+    "route": "regression",
+    "size": "1440",
+    "url": "/prompts/00000000-0000-0000-0000-000000000501",
+    "viewport": 1440,
+    "scrollWidth": 1440,
+    "overflowX": 0,
+    "sourceCounts": {
+      "mock": 3,
+      "derived": 3
+    },
+    "offenderNodes": [],
+    "horizontalScrollRegions": [
+      {
+        "className": "tf-table-shell compact",
+        "clientWidth": 233,
+        "scrollWidth": 233,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 233,
+        "scrollWidth": 560,
+        "scrollable": true
+      },
+      {
+        "className": "tf-table-shell compact",
+        "clientWidth": 846,
+        "scrollWidth": 846,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 846,
+        "scrollWidth": 846,
+        "scrollable": false
+      }
+    ],
+    "keyBoxes": [
+      {
+        "selector": ".console-shell",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 1279,
+          "right": 1440
+        }
+      },
+      {
+        "selector": ".sidebar",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 148,
+          "height": 1040,
+          "right": 148
+        }
+      },
+      {
+        "selector": ".console-topbar",
+        "rect": {
+          "x": 148,
+          "y": 0,
+          "width": 1292,
+          "height": 50,
+          "right": 1440
+        }
+      },
+      {
+        "selector": ".console-content",
+        "rect": {
+          "x": 148,
+          "y": 50,
+          "width": 1292,
+          "height": 1229,
+          "right": 1440
+        }
+      },
+      {
+        "selector": ".tf-regression-grid",
+        "rect": {
+          "x": 172,
+          "y": 254,
+          "width": 1244,
+          "height": 1001,
+          "right": 1416
+        }
+      }
+    ]
+  },
+  {
+    "route": "regression",
+    "size": "1280",
+    "url": "/prompts/00000000-0000-0000-0000-000000000501",
+    "viewport": 1280,
+    "scrollWidth": 1280,
+    "overflowX": 0,
+    "sourceCounts": {
+      "mock": 3,
+      "derived": 3
+    },
+    "offenderNodes": [],
+    "horizontalScrollRegions": [
+      {
+        "className": "tf-table-shell compact",
+        "clientWidth": 204,
+        "scrollWidth": 204,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 204,
+        "scrollWidth": 560,
+        "scrollable": true
+      },
+      {
+        "className": "tf-table-shell compact",
+        "clientWidth": 686,
+        "scrollWidth": 686,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 686,
+        "scrollWidth": 840,
+        "scrollable": true
+      }
+    ],
+    "keyBoxes": [
+      {
+        "selector": ".console-shell",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 1281,
+          "right": 1280
+        }
+      },
+      {
+        "selector": ".sidebar",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 148,
+          "height": 960,
+          "right": 148
+        }
+      },
+      {
+        "selector": ".console-topbar",
+        "rect": {
+          "x": 148,
+          "y": 0,
+          "width": 1132,
+          "height": 50,
+          "right": 1280
+        }
+      },
+      {
+        "selector": ".console-content",
+        "rect": {
+          "x": 148,
+          "y": 50,
+          "width": 1132,
+          "height": 1231,
+          "right": 1280
+        }
+      },
+      {
+        "selector": ".tf-regression-grid",
+        "rect": {
+          "x": 172,
+          "y": 254,
+          "width": 1084,
+          "height": 1003,
+          "right": 1256
+        }
+      }
+    ]
+  },
+  {
+    "route": "regression",
+    "size": "980",
+    "url": "/prompts/00000000-0000-0000-0000-000000000501",
+    "viewport": 980,
+    "scrollWidth": 980,
+    "overflowX": 0,
+    "sourceCounts": {
+      "mock": 3,
+      "derived": 3
+    },
+    "offenderNodes": [],
+    "horizontalScrollRegions": [
+      {
+        "className": "tf-table-shell compact",
+        "clientWidth": 901,
+        "scrollWidth": 901,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 901,
+        "scrollWidth": 901,
+        "scrollable": false
+      },
+      {
+        "className": "tf-table-shell compact",
+        "clientWidth": 901,
+        "scrollWidth": 901,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 901,
+        "scrollWidth": 901,
+        "scrollable": false
+      }
+    ],
+    "keyBoxes": [
+      {
+        "selector": ".console-shell",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 980,
+          "height": 3163,
+          "right": 980
+        }
+      },
+      {
+        "selector": ".sidebar",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 980,
+          "height": 188,
+          "right": 980
+        }
+      },
+      {
+        "selector": ".console-topbar",
+        "rect": {
+          "x": 0,
+          "y": 188,
+          "width": 980,
+          "height": 50,
+          "right": 980
+        }
+      },
+      {
+        "selector": ".console-content",
+        "rect": {
+          "x": 0,
+          "y": 238,
+          "width": 980,
+          "height": 2925,
+          "right": 980
+        }
+      },
+      {
+        "selector": ".tf-regression-grid",
+        "rect": {
+          "x": 22,
+          "y": 439,
+          "width": 937,
+          "height": 2702,
+          "right": 958
+        }
+      }
+    ]
+  },
+  {
+    "route": "regression",
+    "size": "390",
+    "url": "/prompts/00000000-0000-0000-0000-000000000501",
+    "viewport": 390,
+    "scrollWidth": 390,
+    "overflowX": 0,
+    "sourceCounts": {
+      "mock": 3,
+      "derived": 3
+    },
+    "offenderNodes": [
+      {
+        "tag": "table",
+        "className": "w-full caption-bottom text-sm tf-dense-table",
+        "text": "Run IDDatasetVersionStatusPass rateCostActions00000000stage6-support-regressionv",
+        "right": 870,
+        "left": 30,
+        "width": 840,
+        "parentClass": "relative w-full overflow-x-auto",
+        "parentOverflowX": "auto"
+      },
+      {
+        "tag": "thead",
+        "className": "[&_tr]:border-b",
+        "text": "Run IDDatasetVersionStatusPass rateCostActions",
+        "right": 870,
+        "left": 30,
+        "width": 840,
+        "parentClass": "w-full caption-bottom text-sm tf-dense-table",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "tr",
+        "className": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "text": "Run IDDatasetVersionStatusPass rateCostActions",
+        "right": 870,
+        "left": 30,
+        "width": 840,
+        "parentClass": "[&_tr]:border-b",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "th",
+        "className": "h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0",
+        "text": "Actions",
+        "right": 870,
+        "left": 772,
+        "width": 98,
+        "parentClass": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "tbody",
+        "className": "[&_tr:last-child]:border-0",
+        "text": "00000000stage6-support-regressionv3needs_review66.7%$0Open00000000stage6-support",
+        "right": 870,
+        "left": 30,
+        "width": 840,
+        "parentClass": "w-full caption-bottom text-sm tf-dense-table",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "tr",
+        "className": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "text": "00000000stage6-support-regressionv3needs_review66.7%$0Open",
+        "right": 870,
+        "left": 30,
+        "width": 840,
+        "parentClass": "[&_tr:last-child]:border-0",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "td",
+        "className": "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0",
+        "text": "Open",
+        "right": 870,
+        "left": 772,
+        "width": 98,
+        "parentClass": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "parentOverflowX": "visible"
+      },
+      {
+        "tag": "tr",
+        "className": "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "text": "00000000stage6-support-regressionv2needs_review66.7%$0Open",
+        "right": 870,
+        "left": 30,
+        "width": 840,
+        "parentClass": "[&_tr:last-child]:border-0",
+        "parentOverflowX": "visible"
+      }
+    ],
+    "horizontalScrollRegions": [
+      {
+        "className": "tf-table-shell compact",
+        "clientWidth": 330,
+        "scrollWidth": 330,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 330,
+        "scrollWidth": 560,
+        "scrollable": true
+      },
+      {
+        "className": "tf-table-shell compact",
+        "clientWidth": 330,
+        "scrollWidth": 330,
+        "scrollable": false
+      },
+      {
+        "className": "relative w-full overflow-x-auto",
+        "clientWidth": 330,
+        "scrollWidth": 840,
+        "scrollable": true
+      }
+    ],
+    "keyBoxes": [
+      {
+        "selector": ".console-shell",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 5008,
+          "right": 390
+        }
+      },
+      {
+        "selector": ".sidebar",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 136,
+          "right": 390
+        }
+      },
+      {
+        "selector": ".console-topbar",
+        "rect": {
+          "x": 0,
+          "y": 136,
+          "width": 390,
+          "height": 173,
+          "right": 390
+        }
+      },
+      {
+        "selector": ".console-content",
+        "rect": {
+          "x": 0,
+          "y": 309,
+          "width": 390,
+          "height": 4699,
+          "right": 390
+        }
+      },
+      {
+        "selector": ".tf-regression-grid",
+        "rect": {
+          "x": 12,
+          "y": 814,
+          "width": 366,
+          "height": 4182,
+          "right": 378
+        }
+      }
+    ]
+  }
+]

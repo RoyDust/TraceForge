@@ -18,13 +18,22 @@ type EvalRunDetail = Prisma.EvalRunGetPayload<{
 }>;
 
 function resultBadge(result: EvalRunDetail["results"][number]) {
-  if (result.status === "needs_review") return <span className="badge estimated">needs review</span>;
-  if (result.pass === true) return <span className="badge provider">passed</span>;
-  return <span className="badge failed">failed</span>;
+  if (result.status === "needs_review") return <span className="badge estimated">需复核</span>;
+  if (result.pass === true) return <span className="badge provider">通过</span>;
+  return <span className="badge failed">失败</span>;
 }
 
 function scoreText(value: { toString(): string } | null) {
   return value?.toString() ?? "—";
+}
+
+function evalStatusLabel(status: string | null | undefined) {
+  if (status === "completed") return "已完成";
+  if (status === "running") return "运行中";
+  if (status === "failed") return "失败";
+  if (status === "needs_review") return "需复核";
+  if (status === "pending") return "待处理";
+  return status ?? "未知";
 }
 
 export default async function EvalRunPage({ params }: { params: Params }) {
@@ -53,14 +62,14 @@ export default async function EvalRunPage({ params }: { params: Params }) {
     }
   } catch (error) {
     console.error(error);
-    readError = "无法读取 EvalRun。请确认数据库连接可用。";
+    readError = "无法读取评测运行。请确认数据库连接可用。";
   }
 
   if (readError) {
     return (
       <main>
         <Link className="back-link" href="/evals">
-          返回 Evals
+          返回评测
         </Link>
         <section className="error-state" role="alert">
           <h1>读取失败</h1>
@@ -74,11 +83,11 @@ export default async function EvalRunPage({ params }: { params: Params }) {
     return (
       <main>
         <Link className="back-link" href="/evals">
-          返回 Evals
+          返回评测
         </Link>
         <section className="empty-state">
-          <h1>没有找到这个 EvalRun</h1>
-          <p className="muted">Run 可能已删除，或 URL 中的 id 不属于当前数据库。</p>
+          <h1>没有找到这个评测运行</h1>
+          <p className="muted">运行可能已删除，或 URL 中的 id 不属于当前数据库。</p>
         </section>
       </main>
     );
@@ -90,36 +99,36 @@ export default async function EvalRunPage({ params }: { params: Params }) {
   return (
     <main>
       <Link className="back-link" href={`/evals/${run.datasetId}`}>
-        返回 Dataset
+        返回数据集
       </Link>
       <header className="page-head">
         <div>
-          <p className="eyebrow">EvalRun Detail</p>
+          <p className="eyebrow">评测运行详情</p>
           <h1>{run.dataset.name} · {compactId(run.id)}</h1>
           <p className="muted">{run.dataset.project.name} · {promptLabel}</p>
         </div>
-        <span className={`badge ${run.status === "needs_review" ? "estimated" : "provider"}`}>{run.status}</span>
+        <span className={`badge ${run.status === "needs_review" ? "estimated" : "provider"}`}>{evalStatusLabel(run.status)}</span>
       </header>
 
       <section className="summary-grid">
         <div className="summary-cell">
-          <small>Pass Rate</small>
+          <small>通过率</small>
           <strong>{formatPercent(passRate(run.results))}</strong>
         </div>
         <div className="summary-cell">
-          <small>Average Score</small>
+          <small>平均得分</small>
           <strong>{scoreText(run.averageScore)}</strong>
         </div>
         <div className="summary-cell">
-          <small>Cost</small>
+          <small>成本</small>
           <strong>{formatMoney(run.totalCost)}</strong>
         </div>
         <div className="summary-cell">
-          <small>Duration</small>
+          <small>耗时</small>
           <strong>{formatMs(run.durationMs)}</strong>
         </div>
         <div className="summary-cell">
-          <small>PromptVersion</small>
+          <small>提示词版本</small>
           <strong>
             {run.promptVersion ? (
               <Link className="row-link" href={`/prompts/${run.promptVersion.prompt.id}?compare=${run.promptVersion.version}`}>
@@ -131,15 +140,15 @@ export default async function EvalRunPage({ params }: { params: Params }) {
           </strong>
         </div>
         <div className="summary-cell">
-          <small>Model</small>
+          <small>模型</small>
           <strong>{run.modelConfig ? run.modelConfig.modelName : "—"}</strong>
         </div>
         <div className="summary-cell">
-          <small>Created</small>
+          <small>创建时间</small>
           <strong>{formatDate(run.createdAt)}</strong>
         </div>
         <div className="summary-cell">
-          <small>Run ID</small>
+          <small>运行 ID</small>
           <strong>{compactId(run.id)}</strong>
         </div>
       </section>
@@ -165,14 +174,14 @@ export default async function EvalRunPage({ params }: { params: Params }) {
                   <div className="section-heading">
                     <div>
                       <h3>{result.evalCase.input}</h3>
-                      <p className="muted">{result.evalCase.assertionType} · score {scoreText(result.score)}</p>
+                      <p className="muted">{result.evalCase.assertionType} · 得分 {scoreText(result.score)}</p>
                     </div>
                     {resultBadge(result)}
                   </div>
                   <p>{result.judgeReason ?? "—"}</p>
                   <div className="preview-grid single">
                     <div>
-                      <h3>Output</h3>
+                      <h3>输出</h3>
                       <pre>{result.output ?? "—"}</pre>
                     </div>
                   </div>
@@ -208,12 +217,12 @@ export default async function EvalRunPage({ params }: { params: Params }) {
               <table>
                 <thead>
                   <tr>
-                    <th>Case</th>
-                    <th>Status</th>
-                    <th>Score</th>
-                    <th>Cost</th>
-                    <th>Duration</th>
-                    <th>Created</th>
+                    <th>样本</th>
+                    <th>状态</th>
+                    <th>得分</th>
+                    <th>成本</th>
+                    <th>耗时</th>
+                    <th>创建时间</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -240,9 +249,9 @@ export default async function EvalRunPage({ params }: { params: Params }) {
 
         <aside className="section">
           <section className="section-band">
-            <h2>比较 Run</h2>
+            <h2>比较运行</h2>
             {siblingRuns.length === 0 ? (
-              <p className="muted">同一 Dataset 还没有其它 run。</p>
+              <p className="muted">同一数据集还没有其它运行。</p>
             ) : (
               <div className="metric-list">
                 {siblingRuns.map((sibling) => (
@@ -254,22 +263,22 @@ export default async function EvalRunPage({ params }: { params: Params }) {
             )}
           </section>
           <section className="section-band">
-            <h2>Run Context</h2>
+            <h2>运行上下文</h2>
             <div className="kv-grid">
               <div className="kv">
-                <small>Dataset</small>
+                <small>数据集</small>
                 <strong><Link className="row-link" href={`/evals/${run.datasetId}`}>{run.dataset.name}</Link></strong>
               </div>
               <div className="kv">
-                <small>Provider</small>
+                <small>供应商</small>
                 <strong>{run.modelConfig?.provider.name ?? "—"}</strong>
               </div>
               <div className="kv">
-                <small>Prompt</small>
+                <small>提示词</small>
                 <strong>{promptLabel}</strong>
               </div>
               <div className="kv">
-                <small>Results</small>
+                <small>结果</small>
                 <strong>{run.results.length}</strong>
               </div>
             </div>

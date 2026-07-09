@@ -103,7 +103,7 @@ export async function POST(request: Request) {
     select: { id: true },
   });
   if (!modelConfig) {
-    return NextResponse.json({ error: "ModelConfig 不可用。" }, { status: 400 });
+    return NextResponse.json({ error: "模型配置不可用。" }, { status: 400 });
   }
 
   const runId = randomUUID();

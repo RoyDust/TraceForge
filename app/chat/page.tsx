@@ -21,7 +21,7 @@ export default async function ChatPage() {
     });
   } catch (error) {
     console.error(error);
-    readError = "无法读取 ModelConfig。请确认数据库连接可用。";
+    readError = "无法读取模型配置。请确认数据库连接可用。";
   }
 
   const hasChatApiKey = Boolean(process.env.TRACEFORGE_CHAT_API_KEY?.trim());
@@ -30,11 +30,11 @@ export default async function ChatPage() {
     <main>
       <header className="page-head">
         <div>
-          <p className="eyebrow">Chat Playground</p>
+          <p className="eyebrow">对话调试台</p>
           <h1>对话测试</h1>
-          <p className="muted">发送一次真实 Gateway 调用，并进入对应 TraceRun。</p>
+          <p className="muted">右侧正常对话，左侧实时观察这次网关调用。</p>
         </div>
-        <span className="badge">{models.length} active models</span>
+        <span className="badge">{models.length} 个可用模型</span>
       </header>
 
       {readError ? (
