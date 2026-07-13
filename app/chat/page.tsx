@@ -27,7 +27,7 @@ export default async function ChatPage() {
   const hasChatApiKey = Boolean(process.env.TRACEFORGE_CHAT_API_KEY?.trim());
 
   return (
-    <main>
+    <main className="chat-page">
       <header className="page-head">
         <div>
           <p className="eyebrow">对话调试台</p>

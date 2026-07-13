@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import {
   Bell,
-  ChevronsLeft,
   Clock3,
   Command,
   LogOut,
@@ -20,6 +19,7 @@ import {
 } from "@/components/ui/native-select";
 import { Separator } from "@/components/ui/separator";
 import { ConsoleNav } from "@/components/traceforge/console-nav";
+import { SidebarCollapseButton } from "@/components/traceforge/sidebar-collapse-button";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { consoleChromeViewModel } from "@/lib/ui-view-models";
@@ -37,7 +37,7 @@ export async function ConsoleShell({ children }: { children: ReactNode }) {
           <span className="brand-mark" aria-hidden="true">
             TF
           </span>
-          <span>
+          <span className="brand-copy">
             <strong>TraceForge</strong>
             <small>事故指挥台</small>
           </span>
@@ -48,17 +48,12 @@ export async function ConsoleShell({ children }: { children: ReactNode }) {
             <ShieldCheck aria-hidden="true" />
             <span>网关已治理</span>
           </div>
-          <Button asChild variant="ghost" size="sm" className="console-collapse">
-            <span>
-              <ChevronsLeft aria-hidden="true" />
-              收起
-            </span>
-          </Button>
+          <SidebarCollapseButton />
           <small>{session.email}</small>
           <form action={logoutAction}>
             <Button className="link-button" variant="ghost" size="sm" type="submit">
               <LogOut aria-hidden="true" />
-              退出
+              <span className="sidebar-logout-label">退出</span>
             </Button>
           </form>
         </div>

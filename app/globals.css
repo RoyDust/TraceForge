@@ -69,6 +69,11 @@ body {
   letter-spacing: 0;
 }
 
+body:has(.console-shell) {
+  height: 100dvh;
+  overflow: hidden;
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -157,9 +162,9 @@ label {
   font-weight: 650;
 }
 
-input,
-select,
-textarea {
+input:not([data-slot]),
+select:not([data-slot]),
+textarea:not([data-slot]) {
   width: 100%;
   min-height: 38px;
   padding: 8px 10px;
@@ -221,16 +226,20 @@ button:not([data-slot]):disabled {
 }
 
 .console-shell {
-  min-height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   display: grid;
   grid-template-columns: 148px minmax(0, 1fr);
   background: oklch(0.978 0.006 170);
+  overflow: hidden;
+  transition: grid-template-columns 180ms ease;
 }
 
 .sidebar {
   position: sticky;
   top: 0;
-  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 22px;
@@ -240,6 +249,8 @@ button:not([data-slot]):disabled {
     linear-gradient(180deg, oklch(0.24 0.065 176), oklch(0.17 0.052 178)),
     var(--sidebar);
   color: var(--sidebar-foreground);
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 .brand {
@@ -278,8 +289,18 @@ button:not([data-slot]):disabled {
 }
 
 .console-nav {
+  min-height: 0;
   display: grid;
   gap: 5px;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.console-nav::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .console-nav-link {
@@ -289,6 +310,9 @@ button:not([data-slot]):disabled {
   border: 1px solid transparent;
   color: oklch(0.9 0.02 170);
   font-weight: 700;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .console-nav-link:hover {
@@ -332,12 +356,17 @@ button:not([data-slot]):disabled {
 
 .console-collapse {
   padding: 0;
+  touch-action: manipulation;
+  user-select: none;
 }
 
 .console-main {
+  height: 100dvh;
   min-width: 0;
+  min-height: 0;
   display: grid;
   grid-template-rows: 50px minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .console-topbar {
@@ -417,7 +446,58 @@ button:not([data-slot]):disabled {
 
 .console-content {
   min-width: 0;
+  min-height: 0;
   padding: clamp(14px, 2.2vw, 24px);
+  overflow: hidden;
+}
+
+.console-content > main {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.console-content > .tf-dashboard,
+.console-content > .tf-incident,
+.console-content > .tf-regression,
+.console-content > .chat-page {
+  overflow: hidden;
+}
+
+@media (min-width: 981px) {
+  .console-shell[data-sidebar-collapsed="true"] {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .console-shell[data-sidebar-collapsed="true"] .sidebar {
+    gap: 16px;
+    padding-inline: 8px;
+  }
+
+  .console-shell[data-sidebar-collapsed="true"] .brand,
+  .console-shell[data-sidebar-collapsed="true"] .console-nav-link,
+  .console-shell[data-sidebar-collapsed="true"] .sidebar-status,
+  .console-shell[data-sidebar-collapsed="true"] .console-collapse,
+  .console-shell[data-sidebar-collapsed="true"] .link-button {
+    justify-content: center;
+  }
+
+  .console-shell[data-sidebar-collapsed="true"] .brand-copy,
+  .console-shell[data-sidebar-collapsed="true"] .console-nav-link span,
+  .console-shell[data-sidebar-collapsed="true"] .sidebar-status span,
+  .console-shell[data-sidebar-collapsed="true"] .console-collapse-label,
+  .console-shell[data-sidebar-collapsed="true"] .sidebar-footer > small,
+  .console-shell[data-sidebar-collapsed="true"] .sidebar-logout-label {
+    display: none;
+  }
+
+  .console-shell[data-sidebar-collapsed="true"] .sidebar-footer form,
+  .console-shell[data-sidebar-collapsed="true"] .link-button,
+  .console-shell[data-sidebar-collapsed="true"] .console-collapse {
+    width: 100%;
+  }
 }
 
 .page-head {
@@ -804,18 +884,34 @@ tr:last-child td {
   grid-template-columns: minmax(0, 1fr) minmax(260px, 0.35fr);
 }
 
+.chat-page {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .chat-workbench {
-  min-height: calc(100vh - 170px);
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  align-items: stretch;
   gap: 18px;
+  overflow: hidden;
 }
 
 .chat-live-panel {
   min-width: 0;
+  min-height: 0;
   display: grid;
   align-content: start;
   gap: 14px;
+  padding-right: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .chat-panel-head {
@@ -874,8 +970,9 @@ tr:last-child td {
 }
 
 .chat-conversation {
+  height: 100%;
   min-width: 0;
-  min-height: 620px;
+  min-height: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   border: 1px solid var(--line);
@@ -890,6 +987,8 @@ tr:last-child td {
   gap: 12px;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: clamp(14px, 2vw, 24px);
   background:
     linear-gradient(90deg, rgba(32, 37, 34, 0.035) 1px, transparent 1px),
@@ -1109,9 +1208,13 @@ pre {
 }
 
 .tf-dashboard {
+  height: 100%;
   min-width: 0;
-  display: grid;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
+  overflow: hidden;
 }
 
 .tf-page-title {
@@ -1300,16 +1403,37 @@ pre {
 }
 
 .tf-ops-grid {
+  flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 390px;
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
+  overflow: hidden;
 }
 
 .tf-ops-main,
 .tf-live-governance {
   min-width: 0;
+  min-height: 0;
+}
+
+.tf-ops-main {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+  scrollbar-gutter: stable;
+}
+
+.tf-live-governance {
+  height: 100%;
+  overflow: hidden;
+}
+
+.tf-live-governance > .tf-panel {
+  height: 100%;
+  min-height: 0;
 }
 
 .tf-panel {
@@ -1591,8 +1715,13 @@ pre {
 }
 
 .tf-governance-stack {
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
   gap: 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .tf-governance-stack > * {
@@ -1744,9 +1873,13 @@ pre {
 }
 
 .tf-incident {
+  height: 100%;
   min-width: 0;
-  display: grid;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
+  overflow: hidden;
 }
 
 .tf-incident-title {
@@ -1769,23 +1902,32 @@ pre {
 }
 
 .tf-incident-layout {
+  flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr) 320px;
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
+  overflow: hidden;
 }
 
 .tf-run-queue,
 .tf-incident-rail {
-  position: sticky;
-  top: 62px;
+  position: static;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .tf-run-queue-body {
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 10px;
   padding: 0;
+  overflow: hidden;
 }
 
 .tf-run-tabs {
@@ -1855,9 +1997,11 @@ pre {
 }
 
 .tf-run-list {
-  max-height: calc(100vh - 255px);
+  min-height: 0;
   display: grid;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   border-top: 1px solid var(--line);
 }
 
@@ -1934,9 +2078,16 @@ pre {
 }
 
 .tf-incident-workspace {
+  height: 100%;
   min-width: 0;
+  min-height: 0;
   display: grid;
+  align-content: start;
   gap: 12px;
+  padding-right: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .tf-incident-head {
@@ -2134,6 +2285,11 @@ pre {
   min-width: 0;
 }
 
+.tf-incident-rail > .tf-panel {
+  height: 100%;
+  min-height: 0;
+}
+
 .tf-rail-callout {
   min-width: 0;
   display: grid;
@@ -2286,9 +2442,13 @@ pre {
 }
 
 .tf-regression {
+  height: 100%;
   min-width: 0;
-  display: grid;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
+  overflow: hidden;
 }
 
 .tf-regression-title {
@@ -2356,11 +2516,14 @@ pre {
 }
 
 .tf-regression-grid {
+  flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 350px;
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
+  overflow: hidden;
 }
 
 .tf-regression-main,
@@ -2369,13 +2532,26 @@ pre {
 }
 
 .tf-regression-main {
+  min-height: 0;
   display: grid;
+  align-content: start;
   gap: 12px;
+  padding-right: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .tf-regression-rail {
-  position: sticky;
-  top: 62px;
+  position: static;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tf-regression-rail > .tf-panel {
+  height: 100%;
+  min-height: 0;
 }
 
 .tf-diff-grid {
@@ -2558,8 +2734,13 @@ pre {
 }
 
 .tf-evidence-stack {
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
   gap: 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .tf-eval-summary-grid {
@@ -2701,8 +2882,16 @@ pre {
 }
 
 @media (max-width: 980px) {
+  body:has(.console-shell) {
+    height: auto;
+    overflow: auto;
+  }
+
   .console-shell {
+    height: auto;
+    min-height: 100dvh;
     grid-template-columns: 1fr;
+    overflow: visible;
   }
 
   .sidebar {
@@ -2711,6 +2900,34 @@ pre {
     flex-direction: row;
     align-items: center;
     overflow-x: auto;
+    overflow-y: visible;
+  }
+
+  .console-nav {
+    overflow-y: visible;
+    scrollbar-gutter: auto;
+  }
+
+  .console-collapse {
+    display: none;
+  }
+
+  .console-main {
+    height: auto;
+    overflow: visible;
+  }
+
+  .console-content {
+    overflow: visible;
+  }
+
+  .console-content > main,
+  .console-content > .tf-dashboard,
+  .console-content > .tf-incident,
+  .console-content > .tf-regression,
+  .console-content > .chat-page {
+    height: auto;
+    overflow: visible;
   }
 
   .sidebar-footer {
@@ -2769,10 +2986,61 @@ pre {
   .tf-incident-rail,
   .tf-regression-rail {
     position: static;
+    height: auto;
+    overflow: visible;
   }
 
   .tf-run-list {
     max-height: none;
+  }
+
+  .tf-run-queue-body {
+    grid-template-rows: none;
+    overflow: visible;
+  }
+
+  .tf-ops-grid,
+  .tf-incident-layout,
+  .tf-regression-grid {
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .tf-ops-main,
+  .tf-live-governance,
+  .tf-incident-workspace,
+  .tf-regression-main,
+  .tf-governance-stack,
+  .tf-evidence-stack {
+    height: auto;
+    min-height: 0;
+    padding-right: 0;
+    overflow: visible;
+    scrollbar-gutter: auto;
+  }
+
+  .tf-live-governance > .tf-panel,
+  .tf-incident-rail > .tf-panel,
+  .tf-regression-rail > .tf-panel {
+    height: auto;
+  }
+
+  .chat-workbench {
+    flex: none;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .chat-live-panel {
+    min-height: 0;
+    padding-right: 0;
+    overflow: visible;
+    scrollbar-gutter: auto;
+  }
+
+  .chat-conversation {
+    height: auto;
+    min-height: 620px;
   }
 }
 
