@@ -1,10 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { ChevronsLeft, ChevronsRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const STORAGE_KEY = "traceforge.sidebar.collapsed";
+const CHANGE_EVENT = "traceforge:sidebar-change";
+
+function subscribe(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  window.addEventListener(CHANGE_EVENT, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(CHANGE_EVENT, onChange);
+  };
+}
+
+function getSnapshot() {
+  return window.localStorage.getItem(STORAGE_KEY) === "true";
+}
+
+function getServerSnapshot() {
+  return false;
+}
 
 function applySidebarState(collapsed: boolean) {
   const shell = document.querySelector<HTMLElement>(".console-shell");
@@ -12,21 +30,16 @@ function applySidebarState(collapsed: boolean) {
 }
 
 export function SidebarCollapseButton() {
-  const [collapsed, setCollapsed] = useState(false);
+  const collapsed = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(STORAGE_KEY) === "true";
-    setCollapsed(stored);
-    applySidebarState(stored);
-  }, []);
+    applySidebarState(collapsed);
+  }, [collapsed]);
 
   function toggleSidebar() {
-    setCollapsed((current) => {
-      const next = !current;
-      window.localStorage.setItem(STORAGE_KEY, String(next));
-      applySidebarState(next);
-      return next;
-    });
+    const next = !collapsed;
+    window.localStorage.setItem(STORAGE_KEY, String(next));
+    window.dispatchEvent(new Event(CHANGE_EVENT));
   }
 
   const label = collapsed ? "展开侧边栏" : "收起侧边栏";

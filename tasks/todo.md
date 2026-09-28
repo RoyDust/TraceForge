@@ -1,6 +1,6 @@
 # 下一步计划 · 本地原生跑通（无 Docker）
 
-## Next.js 16 规范整改（决策完成，待实施）
+## Next.js 16 规范整改（逐项实施中）
 
 > 已确认约束：功能完整优先；Redis、持久化任务队列和独立 Worker 后置；`DEMO_MODE` 可在任何部署环境显式启用。
 
@@ -30,15 +30,20 @@
 
 ### P2 · 工程与部署闸门
 
-- [ ] 增加 ESLint、`next typegen + tsc`、build、Prisma 校验和核心 Playwright 测试脚本。
+- [x] 增加 ESLint、`next typegen + tsc`、build、Prisma 校验和核心 Playwright 测试脚本（#61）。
 - [ ] CI 覆盖登录、权限跳转、Chat 派发和核心页面访问。
+  - #61 已增加登录、受保护路由、退出、侧栏持久化与 mock Gateway HTTP 基线；Chat 派发与完整页面覆盖由后续 ticket 完成。
 - [ ] 统一 `.env.example`、Compose、CI 和部署文档中的 Chat/Eval 环境变量契约。
 - [ ] Console Docker 镜像改用 Next.js standalone，并使用非 root 用户运行。
-- [ ] Next.js 更新到 `16.2.10`，仅处理安全兼容的补丁升级，不运行 `npm audit fix --force`。
+- [x] 经确认将 Next.js 与 eslint-config-next 固定为 `16.3.6`；处理兼容依赖更新，不运行 `npm audit fix --force`（#61）。
 - [ ] Redis 缓存、持久化任务队列和独立 Worker 留待后续单独决策。
 
 ### Decision Review
 
+- #61：新增独立验证命令与隔离的真实 Next.js / PostgreSQL / mock Gateway 测试环境；使用方式见 `docs/testing.md`。
+- #61：本地 `npm ci`、Lint、路由类型生成与 TypeScript、Prisma 校验、生产构建、Rust 测试及 SQLx examples 编译检查通过；GitHub 执行证据记录在 issue 完成评论中。
+- #61：5 个 Chromium smoke tests 通过，成功和失败运行均清理独立 schema。规范与验收双轴审查发现的 Docker 启动中断清理问题已修复并复核。
+- #61：审计剩余 4 项 high、0 critical；Prisma 传递依赖风险与非强制修复边界见 `docs/verification/issue-61-dependency-audit.md`。
 - 已确认 Dashboard 不删减功能，只更换为可扩展的数据查询实现。
 - 已确认正式部署也允许开启 `DEMO_MODE`，但必须显式启用并展示演示标识。
 - 已确认当前阶段不增加 Redis 基础设施。

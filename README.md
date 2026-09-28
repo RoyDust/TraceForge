@@ -129,6 +129,20 @@ curl localhost:8080/readyz      # 就绪 (探 PostgreSQL) -> ready
 
 `prisma/seed.ts` 会从 `DATABASE_URL` 解析 `?schema=` 并传给 `PrismaPg` 适配器（driver adapter 默认落 `public`，不传则找不到表）。两个 `.env` 均含真实凭证，**勿提交版本库**（已在 `.gitignore`）。
 
+## 验证基线
+
+```bash
+npm ci
+npm run db:generate
+npm run lint
+npm run typecheck
+npm run build
+npx playwright install chromium
+npm run test:e2e
+```
+
+浏览器测试自动启动隔离的 PostgreSQL、真实 Console 和 Rust mock Gateway。没有 Docker 时，显式设置 `TEST_DATABASE_URL` 连接已有测试数据库；每次运行创建独立 schema，退出时清理。配置、测试范围和报告见 [测试说明](docs/testing.md)。
+
 ## 双 ORM 契约
 
 PostgreSQL 是单一事实源：**Prisma 负责 migration**（改 `schema.prisma` 后 `npm run db:migrate`），**Rust 用 sqlx 按表读写**。两边靠 CI 同步——[`ci.yml`](.github/workflows/ci.yml) 先 `prisma db push` 建库，再 `cargo build` 让 sqlx 的 `query!` 宏在编译期校验 Rust SQL 是否与 schema 一致；schema 漂移会让 CI 失败。

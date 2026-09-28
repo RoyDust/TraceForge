@@ -37,8 +37,14 @@
     "hooks/**/*.ts",
     "hooks/**/*.tsx",
     "lib/**/*.ts",
+    "next.config.ts",
+    "prisma.config.ts",
+    "playwright.config.ts",
+    "tests/**/*.ts",
+    ".next-e2e/types/**/*.ts",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    ".next-e2e/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",
