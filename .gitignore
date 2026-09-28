@@ -8,6 +8,7 @@ node_modules/
 next-env.d.ts
 *.tsbuildinfo
 tmp-*.log
+.next-dev.*.log
 
 # Prisma generated client
 prisma/generated/

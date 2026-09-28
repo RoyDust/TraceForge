@@ -13,7 +13,11 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="zh-CN" className={cn("font-sans", geist.variable)}>
+    <html
+      lang="zh-CN"
+      className={cn("font-sans", geist.variable)}
+      suppressHydrationWarning
+    >
       <body>
         <TooltipProvider>{children}</TooltipProvider>
       </body>

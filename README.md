@@ -40,6 +40,20 @@
 | **TS 控制面** | 控制台 UI、Dashboard、Trace 可视化、Prompt 版本、Eval、业务 API | Next.js · React · Prisma 7 · Tailwind |
 | **共享存储** | 单一事实源 + 数据契约 | PostgreSQL · Redis（限流 / 缓存） |
 
+### 可交互架构文档
+
+仓库内的 `.omm/` 由 [Oh My Mermaid](https://github.com/oh-my-mermaid/oh-my-mermaid) 生成，包含总体架构、请求生命周期、数据流、路由页面和外部集成五个可递归展开的视角。
+
+```powershell
+# 打开本地交互式架构浏览器
+omm view
+
+# 查看、校验或刷新文档
+omm list
+omm validate
+# 在 Codex 中使用 /omm-scan 刷新架构文档
+```
+
 ## 当前状态
 
 当前已完成 Stage 0–6 的本地可验证闭环。已落地：

@@ -1,5 +1,119 @@
 # 下一步计划 · 本地原生跑通（无 Docker）
 
+## Next.js 16 规范整改（决策完成，待实施）
+
+> 已确认约束：功能完整优先；Redis、持久化任务队列和独立 Worker 后置；`DEMO_MODE` 可在任何部署环境显式启用。
+
+### P0 · 演示模式与权限边界
+
+- [ ] 将默认密码预填限制为显式 `DEMO_MODE`，并在界面持续显示演示模式标识。
+- [ ] 演示数据只允许通过 seed 写入；关闭演示模式后禁止预填凭据和静默生成假指标。
+- [ ] 保持单管理员模式，建立 `server-only` DAL，并在所有数据读取入口验证 Session。
+- [ ] Console 全站设置 `noindex, nofollow`。
+
+### P1 · 请求生命周期与数据真实性
+
+- [ ] Chat 后台派发改用 Next.js `after()` 托管，不引入 Redis 队列。
+- [ ] Eval 保持同步演示执行器，增加样本上限、超时和重复提交保护。
+- [ ] 删除源码中的 Eval 默认 API Key；缺少配置时明确失败。
+- [ ] Dashboard 保留全部指标、趋势、模型拆分和治理功能，改用数据库聚合、`UsageDaily` 与有限明细查询。
+- [ ] 数据库故障显示真实错误，不使用模拟数据掩盖。
+
+### P1 · App Router 与数据一致性
+
+- [ ] 将受保护页面整理到 `(console)` Route Group，共用单一 Layout。
+- [ ] 补充 `loading.tsx`、`error.tsx`、`global-error.tsx` 和 `not-found.tsx`。
+- [ ] 详情资源不存在时使用标准 `notFound()` 语义。
+- [ ] Server Actions 返回可展示业务错误，并校验父子记录关联。
+- [ ] Prompt/Eval 多步写入使用事务和幂等保护。
+- [ ] 数据库存储与 API/导出使用 UTC，Console 筛选和展示统一使用 `Asia/Shanghai`。
+
+### P2 · 工程与部署闸门
+
+- [ ] 增加 ESLint、`next typegen + tsc`、build、Prisma 校验和核心 Playwright 测试脚本。
+- [ ] CI 覆盖登录、权限跳转、Chat 派发和核心页面访问。
+- [ ] 统一 `.env.example`、Compose、CI 和部署文档中的 Chat/Eval 环境变量契约。
+- [ ] Console Docker 镜像改用 Next.js standalone，并使用非 root 用户运行。
+- [ ] Next.js 更新到 `16.2.10`，仅处理安全兼容的补丁升级，不运行 `npm audit fix --force`。
+- [ ] Redis 缓存、持久化任务队列和独立 Worker 留待后续单独决策。
+
+### Decision Review
+
+- 已确认 Dashboard 不删减功能，只更换为可扩展的数据查询实现。
+- 已确认正式部署也允许开启 `DEMO_MODE`，但必须显式启用并展示演示标识。
+- 已确认当前阶段不增加 Redis 基础设施。
+
+## Chat 与侧边栏交互修复（2026-07-14）
+
+- [x] Chat 页固定在控制台内容区高度内，仅消息区与左侧信息区内部滚动。
+- [x] 左侧导航保留短屏滚动能力，但隐藏滚动条并禁用长按选择造成的视觉滚动。
+- [x] 将“收起”替换为真实可切换、可持久化的侧边栏折叠按钮。
+- [x] 验证桌面端折叠/展开、Chat 滚动边界和移动端自然滚动。
+- [x] 运行构建与类型检查。
+
+### Review
+
+- `1440 × 900` 下 Chat document 高度固定为 `900px`，消息线程和左侧实时信息面板均可独立滚动。
+- 左侧导航滚动条计算值为 `none`，长按后侧栏与导航 `scrollTop` 保持 `0`，没有产生文本选择。
+- 侧栏可在 `148px` 与 `56px` 间切换，折叠状态写入本地存储，刷新后仍保持；移动端隐藏折叠按钮。
+- `npm run build`、`npx tsc --noEmit` 和相关 diff 检查通过，Chrome + Playwright 完成滚动、折叠、持久化和截图验证。
+
+## 控制台固定视口与卡片内滚动（2026-07-14）
+
+- [x] 桌面端控制台壳层限制为 `100dvh`，禁止 body 与总体页面滚动。
+- [x] 左侧导航、追踪运行队列、中央工作区和右侧治理面板分别设置高度边界。
+- [x] 治理总览与 Prompt/Eval 工作区复用同一套内部滚动规则。
+- [x] 在 `980px` 以下恢复自然页面滚动，避免移动端嵌套滚动。
+- [x] 运行构建并验证桌面与窄屏布局。
+
+### Review
+
+- `1440 × 900` 下追踪运行、治理总览和 Prompt/Eval 页的 document 高度均等于视口高度，body 为 `overflow: hidden`。
+- 追踪运行列表与实时治理卡可独立滚动；治理总览主列与治理卡、Prompt/Eval 证据栏均使用内部滚动。
+- `390 × 844` 下恢复 body 自然滚动，工作区不保留桌面端嵌套高度限制。
+- `npm run build`、`npx tsc --noEmit` 和本次 CSS diff 检查通过；Chrome + Playwright 完成桌面与移动端截图和滚动量测。
+
+## 根布局 Hydration 警告修复（2026-07-14）
+
+- [x] 根据报错差异确认根 `<html>` 被浏览器扩展注入额外属性。
+- [x] 仅在根 `<html>` 节点抑制预期的 hydration 属性差异。
+- [x] 运行构建并模拟扩展注入，确认控制台不再报 hydration mismatch。
+
+### Review
+
+- 报错中的 `data-redeviation-bs-uid` 不由应用生成，而是浏览器扩展修改根 HTML 后造成的属性差异。
+- 已在根 `<html>` 添加 `suppressHydrationWarning`，抑制范围只覆盖该节点，不会掩盖后代组件的 hydration 问题。
+- `npx tsc --noEmit` 与 `npm run build` 均通过。
+- Playwright 在页面脚本运行前注入同名属性访问 `/login`，未出现 hydration 控制台错误或页面异常。
+
+## 控件尺寸与首页搜索栏修复（2026-07-13）
+
+- [x] 对照截图定位按钮、下拉框和搜索栏样式来源。
+- [x] 确认旧全局表单规则覆盖 UI 组件尺寸的根因。
+- [x] 收窄全局表单选择器，恢复组件自身高度规范。
+- [x] 构建并浏览器验证 Dashboard 与首页顶栏。
+
+### Review
+
+- 根因是旧全局 `input/select/textarea` 的 `min-height: 38px` 覆盖了带 `data-slot` 的 UI 组件尺寸。
+- 已将旧样式限制为非组件化原生表单控件，Dashboard 的项目下拉框与刷新按钮恢复为同高 `28px`。
+- 首页搜索输入恢复为 `30px`，完整包含在 `34px` 搜索容器内；桌面与 `640px` 窄屏均无裁切或横向溢出。
+- `npm run build` 通过；生产构建页面已用 Chrome + Playwright 验证。
+
+## Oh My Mermaid 架构文档生成（2026-07-13）
+
+- [x] 核对官方 CLI 与 Codex 集成方式。
+- [x] 全局安装 `oh-my-mermaid@0.2.0` 并注册 Codex skill。
+- [x] 扫描 TraceForge，生成 `.omm/` 递归架构文档。
+- [x] 验证全部 Mermaid 图与本地查看命令。
+
+### Review
+
+- 已生成 5 个视角：`overall-architecture`、`request-lifecycle`、`data-flow`、`route-page-map`、`external-integrations`。
+- 已为 Console、Gateway、请求阶段、数据流节点、路由页面和外部依赖补齐递归说明。
+- `omm validate` 全部通过；`omm tree overall-architecture` 可正确识别两层组件树。
+- Windows 兼容性：`omm setup codex` 使用 Unix `which codex` 检测，无法识别 Codex Desktop；已按其源码目标创建 `C:\Users\Administrator\.agents\skills\oh-my-mermaid` junction，效果等同官方 setup。
+
 > 环境约束：当前 Windows 无 Docker。故下一步走**本地原生运行**——gateway 用 `cargo run`、console 用 `npm run dev`，直连已配好的远程 PostgreSQL（`traceforge` schema）。
 > Docker / Compose 降级为**部署阶段（PRD Stage 6）或装了 Docker 之后**再做，见末尾「已延后」。
 >

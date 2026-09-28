@@ -1,0 +1,15 @@
+created: 2026-07-12T18:07:12.330Z
+updated: 2026-07-12T18:07:14.008Z
+update_count: 7
+last_field: note
+git_commit: c3b8a8f
+git_branch: codex/chat-playground-prd44
+children:
+  - policy
+  - query
+  - request
+  - response
+  - storage
+  - trace-job
+  - ui
+  - view-model

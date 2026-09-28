@@ -1,0 +1,13 @@
+created: 2026-07-12T18:07:18.355Z
+updated: 2026-07-12T18:07:19.964Z
+update_count: 7
+last_field: note
+git_commit: c3b8a8f
+git_branch: codex/chat-playground-prd44
+children:
+  - browser
+  - crates
+  - npm
+  - postgres
+  - providers
+  - traceforge

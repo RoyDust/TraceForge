@@ -1,0 +1,16 @@
+graph TD
+    root["Root Redirect\napp/page.tsx"]
+    login["Login\n/login"]
+    shell["Protected Console Shell\nshared layouts"]
+    dashboard["Governance Dashboard\n/dashboard"]
+    chat["Chat Playground\n/chat"]
+    traces["TraceRuns\n/traces + /traces/[id]"]
+    prompts["Prompt Studio\n/prompts + /prompts/[id]"]
+    evals["Eval Runs\n/evals + compare + runs"]
+    root -->|"进入产品"| login
+    login -->|"认证成功"| shell
+    shell -->|"运行概览"| dashboard
+    shell -->|"发起测试调用"| chat
+    shell -->|"定位失败调用"| traces
+    shell -->|"管理版本并回归"| prompts
+    shell -->|"查看评测证据"| evals

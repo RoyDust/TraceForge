@@ -1,0 +1,18 @@
+graph LR
+    console["Next.js Console\napp/ + components/"]
+    gateway["Rust Gateway\ngateway/src/"]
+    postgres["PostgreSQL\nprisma/schema.prisma"]
+    upstream["Model Providers\nOpenAI-compatible APIs"]
+    docs["Architecture & Ops Docs\nREADME.md + docs/"]
+    console -->|"读取控制面数据"| postgres
+    console -->|"派发测试调用"| gateway
+    gateway -->|"鉴权、路由与代理"| upstream
+    gateway -->|"异步写入 Run/Span/Event"| postgres
+    docs -->|"定义契约与运行方式"| console
+    docs -->|"定义网关约束"| gateway
+    classDef entry fill:#89b4fa,stroke:#89b4fa,color:#1e1e2e
+    classDef store fill:#a6e3a1,stroke:#a6e3a1,color:#1e1e2e
+    classDef external fill:#585b70,stroke:#585b70,color:#cdd6f4
+    class console,gateway entry
+    class postgres store
+    class upstream external

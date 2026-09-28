@@ -1,0 +1,13 @@
+graph TD
+    shell["Console Shell\napp/console-shell.tsx"]
+    pages["Route Pages\napp/**/page.tsx"]
+    actions["Actions & Route Handlers\napp/actions.ts + app/**/route.ts"]
+    auth["Admin Auth\nlib/auth.ts"]
+    prisma-client["Prisma Client\nlib/prisma.ts"]
+    view-models["UI View Models\nlib/ui-view-models.ts"]
+    shell -->|"包裹受保护页面"| pages
+    auth -->|"校验管理员会话"| shell
+    pages -->|"聚合展示模型"| view-models
+    pages -->|"查询与写入"| prisma-client
+    actions -->|"执行服务端变更"| prisma-client
+    actions -->|"检查会话"| auth

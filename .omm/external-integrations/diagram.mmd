@@ -1,0 +1,14 @@
+graph LR
+    traceforge["TraceForge\nConsole + Gateway"]
+    postgres["PostgreSQL\ncontrol + telemetry store"]
+    providers["OpenAI-compatible Providers\nmodel inference"]
+    browser["Admin Browser\nconsole operator"]
+    npm["npm Registry\nconsole dependencies"]
+    crates["crates.io\ngateway dependencies"]
+    browser -->|"HTTPS 管理与排障"| traceforge
+    traceforge -->|"Prisma/sqlx"| postgres
+    traceforge -->|"Bearer + JSON/SSE"| providers
+    npm -->|"构建时提供 JS 包"| traceforge
+    crates -->|"构建时提供 Rust crates"| traceforge
+    classDef external fill:#585b70,stroke:#585b70,color:#cdd6f4
+    class postgres,providers,browser,npm,crates external

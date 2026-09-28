@@ -1,0 +1,50 @@
+created: 2026-07-12T18:07:10.411Z
+updated: 2026-07-12T18:07:52.435Z
+update_count: 8
+last_field: diagram
+git_commit: c3b8a8f
+git_branch: codex/chat-playground-prd44
+prev_diagram: "sequenceDiagram
+
+  \    participant User as 管理员浏览器
+
+  \    participant Console as Next.js Console
+
+  \    participant DB as PostgreSQL
+
+  \    participant Gateway as Rust Gateway
+
+  \    participant Provider as Model Provider
+
+  \    User->>Console: 在 Chat Playground 提交 model/messages
+
+  \    Console->>Console: 校验管理员会话与请求体
+
+  \    Console->>DB: 确认活动 ModelConfig
+
+  \    Console-->>User: 202 + runId + Trace URL
+
+  \    Console->>Gateway: 异步 POST /v1/chat/completions
+
+  \    Gateway->>DB: API Key 鉴权并解析模型/fallback
+
+  \    Gateway->>Provider: 转发 OpenAI-compatible 请求
+
+  \    Provider-->>Gateway: JSON 或 SSE 响应
+
+  \    Gateway-->>Console: 返回响应并附 X-TraceForge-Run-Id
+
+  \    Gateway->>DB: 异步写 TraceRun/Span/Event/usage/cost
+
+  \    User->>Console: 打开 /traces/{runId}
+
+  \    Console->>DB: 查询调用树与归因证据
+
+  \    Console-->>User: 展示瀑布、责任域和错误信息\r\n"
+children:
+  - browser-submit
+  - console-validate
+  - gateway-policy
+  - incident-view
+  - provider-call
+  - trace-persist
