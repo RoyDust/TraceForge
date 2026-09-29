@@ -67,6 +67,7 @@ async function main() {
   const container = "traceforge-e2e-" + id;
   const dockerConsole = process.argv.includes("--docker") || Boolean(process.env.TRACEFORGE_E2E_IMAGE);
   const image = process.env.TRACEFORGE_E2E_IMAGE || "traceforge-console:e2e";
+  const gatewayImage = process.env.TRACEFORGE_E2E_GATEWAY_IMAGE || "traceforge-gateway:e2e";
   const consoleContainer = "traceforge-console-e2e-" + id;
   let ownsContainer = false;
   let ownsSchema = false;
@@ -113,12 +114,13 @@ async function main() {
     const env = {
       ...process.env,
       TRACEFORGE_E2E_IMAGE: dockerConsole ? image : "",
+      TRACEFORGE_E2E_GATEWAY_IMAGE: dockerConsole ? gatewayImage : "",
       TRACEFORGE_E2E_CONTAINER: consoleContainer,
       DATABASE_URL: url.toString(),
       TRACEFORGE_GATEWAY_DATABASE_URL: gatewayDatabaseUrl.toString(),
       MASTER_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
       DEMO_MODE: "false",
-      TRACEFORGE_DEMO_UPSTREAM_URL: "http://127.0.0.1:" + upstreamPort + "/v1",
+      TRACEFORGE_DEMO_UPSTREAM_URL: "http://" + (dockerConsole && process.platform !== "linux" ? "host.docker.internal" : "127.0.0.1") + ":" + upstreamPort + "/v1",
       TRACEFORGE_E2E_UPSTREAM_PORT: upstreamPort,
       TRACEFORGE_E2E_DEMO_PORT: demoPort,
       TRACEFORGE_E2E_NO_KEY_PORT: noKeyPort,
@@ -144,20 +146,23 @@ async function main() {
       [randomUUID(), "Playwright baseline"]);
     await run(process.execPath, ["--import", "tsx", "prisma/seed.ts"], { env: { ...env, DEMO_MODE: "true" } });
     await run(process.execPath, ["--import", "tsx", "scripts/aggregate-usage-daily.mjs"], { env });
-    await run("cargo", ["build", "--quiet", "--manifest-path", "gateway/Cargo.toml", "--bins"], { env: { ...env, DATABASE_URL: gatewayDatabaseUrl.toString() } });
     if (dockerConsole) {
       if (!process.env.TRACEFORGE_E2E_IMAGE) await run("docker", ["build", "-f", "Dockerfile.console", "-t", image, "."], { env });
+      if (!process.env.TRACEFORGE_E2E_GATEWAY_IMAGE) await run("docker", ["build", "-f", "gateway/Dockerfile", "-t", gatewayImage, "."], { env });
       const uid = await run("docker", ["run", "--rm", "--entrypoint", "id", image, "-u"], { capture: true });
       if (uid !== "1001") throw new Error("Console image must run as uid 1001");
+      const gatewayUid = await run("docker", ["run", "--rm", "--entrypoint", "id", gatewayImage, "-u"], { capture: true });
+      if (gatewayUid !== "1001") throw new Error("Gateway image must run as uid 1001");
       console.log("Verified Docker Console uid " + uid);
     } else {
+      await run("cargo", ["build", "--quiet", "--manifest-path", "gateway/Cargo.toml", "--bins"], { env: { ...env, DATABASE_URL: gatewayDatabaseUrl.toString() } });
       await run(process.execPath, [nextCli, "build"], { env });
       await cp(resolve(root, ".next-e2e/static"), resolve(root, ".next-e2e/standalone/.next-e2e/static"), { recursive: true });
     }
     await run(process.execPath, [playwrightCli, "test", ...process.argv.slice(2).filter((arg) => arg !== "--docker")], { env });
   } finally {
     if (dockerConsole) {
-      for (const mode of ["normal", "demo", "no-key"]) {
+      for (const mode of ["normal", "demo", "no-key", "gateway", "upstream"]) {
         try { await run("docker", ["rm", "--force", consoleContainer + "-" + mode], { capture: true, cleanup: true }); }
         catch (error) { if (!error.message.includes("No such container")) { console.error(error.message); process.exitCode = 1; } }
       }

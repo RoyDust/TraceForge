@@ -52,6 +52,22 @@ async fn chat(Query(q): Query<Q>, body: Bytes) -> Response {
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let model = parsed.get("model").and_then(Value::as_str).unwrap_or("");
+    let judging = parsed["messages"][0]["content"]
+        .as_str()
+        .is_some_and(|s| s.starts_with("You are the TraceForge evaluation judge."));
+    let judge_input = parsed["messages"][1]["content"].as_str().unwrap_or("");
+    if judging && judge_input.contains("[mock-judge-timeout]") {
+        tokio::time::sleep(Duration::from_secs(70)).await;
+    }
+    let content = if judging {
+        if judge_input.contains("[mock-invalid-judge]") {
+            "not valid judge JSON"
+        } else {
+            r#"{"score":0.85,"reason":"mock semantic judgement"}"#
+        }
+    } else {
+        "hello from mock"
+    };
 
     // query 优先; 否则按 model 名推断 (网关只转发 body)。
     let scenario = q.scenario.unwrap_or_else(|| {
@@ -83,7 +99,7 @@ async fn chat(Query(q): Query<Q>, body: Bytes) -> Response {
         _ if is_stream => sse(scenario == "mid_error", want_usage).into_response(),
         _ => Json(json!({
             "id":"mock-1","object":"chat.completion","model":"mock",
-            "choices":[{"index":0,"message":{"role":"assistant","content":"hello from mock"},"finish_reason":"stop"}],
+            "choices":[{"index":0,"message":{"role":"assistant","content":content},"finish_reason":"stop"}],
             "usage":{"prompt_tokens":3,"completion_tokens":3,"total_tokens":6}
         }))
         .into_response(),

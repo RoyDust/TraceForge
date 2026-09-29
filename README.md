@@ -7,15 +7,15 @@ AI 网关与 Agent 可观测控制台。Rust Gateway 代理 OpenAI-compatible �
 - **治理看板**：请求量、失败率、P95、Token、成本、日趋势、模型/供应商、限流、fallback 与流式错误，全部读取持久化数据。最近列表最多 9 个 Run，统计不受列表限制。
 - **Trace**：Run / Span / Event、调用树、瀑布图、责任域归因；可识别项目的网关拒绝允许没有 Span。
 - **Chat Playground**：预声明 Run ID，响应后由 Next.js after() 派发到真实 Gateway，支持非流式/流式调用及有截止时间的结果等待。
-- **Prompt / Eval**：版本发布和回滚；六种断言（llm_judge 目前是本地关键词规则）、人工复核、运行对比；同步评测有样本上限、超时和提交幂等。
+- **Prompt / Eval**：版本发布和回滚；六种断言（llm_judge 真实调用所选模型，返回评分和理由）、人工复核、运行对比；同步评测有样本上限、超时和提交幂等。
 - **权限与展示**：单管理员、每个敏感入口独立校验 Session、全站 noindex；显式 DEMO_MODE 与 NODE_ENV 无关。
-- **部署与测试**：Node standalone、非 root Console 容器、数据库迁移、真实 PostgreSQL + Rust Gateway + mock 上游的 Playwright 回归。
+- **部署与测试**：Node standalone、非 root Console / 预编译 Gateway 容器、SQLx 离线编译、数据库迁移、真实 PostgreSQL + Rust Gateway + mock 上游的 Playwright 回归。
 
 当前没有 Redis、持久化任务队列、独立 Worker、多用户权限或持久化 Chat 会话。网关限流为进程内状态；公开部署需要另外准备服务器、DNS、TLS 和真实密钥。验收矩阵见 [测试说明](docs/testing.md)，历史计划与交付记录见 [tasks/todo.md](tasks/todo.md)。
 
 ## 本地快速开始
 
-需要 Node.js 22+、Rust stable、PostgreSQL 16（可用 Docker）。以下流程连接自己选择的数据库，不清空已有数据。
+需要 Node.js 22.13+、Rust stable、PostgreSQL 16（可用 Docker）。以下流程连接自己选择的数据库，不清空已有数据。
 
 ~~~bash
 cp .env.example .env
@@ -80,7 +80,32 @@ npx tsx scripts/seed-deepseek.ts
 
 脚本在同一事务内更新 DeepSeek 配置槽的地址、模型和 AES-256-GCM 密文。上游密钥加密入库后可从 .env 删除；不要把它当作 TRACEFORGE_CHAT_API_KEY，后者仍是本地 Gateway 的项目密钥。改动默认模型后重启 Console，Chat 会默认选择对应模型，Eval 模型列表也可直接选择它。Demo 标识与持久化演示记录不因接入真实模型而自动改变。
 
-未确认中转价格时不创建 ModelPricing，真实调用照常记录 Token 与延迟，Trace 成本保持未知。
+未确认中转价格时不创建 ModelPricing，真实调用照常记录 Token 与延迟，Trace 成本保持未知。官方费率存在缓存/高低峰差异，不能冒用为中转实际收费；核实记录见 [计价来源](docs/verification/relay-pricing.md)。
+
+## Agent Trace API 与 Node SDK
+
+Gateway 提供四个写接口：POST /api/traces/runs、POST /api/traces/runs/{id}/spans、POST /api/traces/runs/{id}/spans/{spanId}/end、POST /api/traces/runs/{id}/end；GET /api/traces/runs/{id} 可读取同项目 Agent 链路。全部使用项目 API Key 的 trace_ingest 权限，既有 Console Session 不参与。
+
+~~~js
+import { createTraceClient } from "./sdk/node/index.mjs";
+const trace = createTraceClient({ gatewayUrl: "http://localhost:8787", apiKey: process.env.TRACEFORGE_AGENT_API_KEY });
+const runId = await trace.startRun({ name: "My Agent", input: "topic" });
+const spanId = await trace.startSpan(runId, { type: "workflow", name: "write" });
+// 模型请求加 X-TraceForge-Agent-Run-Id: runId 和 X-TraceForge-Parent-Span-Id: spanId
+// 使用同时含 gateway / trace_ingest 的项目 Key。不可与 X-TraceForge-Run-Id 混用。
+await trace.endSpan(runId, spanId, { output: "draft" });
+await trace.endRun(runId, { output: "draft" });
+~~~
+
+ID 可显式传入，重复创建返回 409，不覆盖旧记录。手工 Span 仅接受 workflow/tool/db/review；LLM Span 由网关管理且是叶节点。父子归属必须一致，结束时不能有活动子 Span；SDK 最多等待 10 秒读取异步写入结果，不能确认结束就报错，不自动重发模型请求或写操作。服务崩溃/写队列故障可能留下 running Span，不宣称持久队列保证。
+
+~~~bash
+# 真实执行选题、资料抓取、成文、审稿与写文件；会产生三次付费模型调用
+# 使用已有活动模型和双 scope Key；输出文件已存在时拒绝覆盖
+node examples/writing-agent.mjs https://example.com /tmp/my-new-draft.md
+~~~
+
+LLM Judge 的 assertion_config 支持 rubric 与 0–1 的 threshold（默认 0.7），输入、参考答案和候选输出作为待审数据。每个样本新增一次通过 Gateway 的真实评审调用，沿用当前所选模型和总预算；异常 JSON/超时记为 error，不退回关键词规则。生成与评审分别按实际 fallback 模型计费，缺一项价格则合计为未知。
 
 ## 验证
 
@@ -96,7 +121,7 @@ npm run test:docker
 npm run deploy:check
 ~~~
 
-E2E 默认创建临时 PostgreSQL 容器；也可显式提供 TEST_DATABASE_URL。每轮只操作自己的随机 schema，测试后清理。Node 与 Docker 模式共用真实 Gateway 和浏览器用例；Docker 模式验证 UID 1001、普通配置、Demo 和缺少 API Key 的运行实例。deploy:check 校验当前 .env 的实际值，不代替网络就绪检查。
+E2E 默认创建临时 PostgreSQL 容器；也可显式提供 TEST_DATABASE_URL。每轮只操作自己的随机 schema，测试后清理。Node 与 Docker 模式共用真实 Gateway 和浏览器用例；Docker 模式运行预编译 Gateway 与 mock 镜像，验证 UID 1001、普通配置、Demo 和缺少 API Key 的运行实例。deploy:check 校验当前 .env 的实际值，不代替网络就绪检查。
 
 ## 数据与运行契约
 

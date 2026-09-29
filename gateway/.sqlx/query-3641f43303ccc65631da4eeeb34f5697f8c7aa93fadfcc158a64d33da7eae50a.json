@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO trace_span (id, run_id, \"type\", name) VALUES ($1, $2, $3::text::span_type, $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3641f43303ccc65631da4eeeb34f5697f8c7aa93fadfcc158a64d33da7eae50a"
+}

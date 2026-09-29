@@ -49,10 +49,12 @@ npx prisma db execute --file upgrade.sql
 npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
 # 差异为空后，将已存在的结构标记为基线，不重新执行完整建表 SQL
 npx prisma migrate resolve --applied 20260929000000_console_baseline
+# 仅当上面的差异脚本已包含 is_agent 且全量比较无差异时，标记本次增量
+npx prisma migrate resolve --applied 20260929100000_agent_run_source
 npm run db:deploy
 ~~~
 
-此次 EvalRun 新增 deadline_at；完整迁移仍保留其它现有实体。已有 migration 历史或结构不同的库应先审查历史和差异，不能盲目 resolve。后续结构变更生成新 migration，不改写已应用的 SQL。
+本次新增 TraceRun.is_agent，之前基线包含 EvalRun.deadline_at；完整迁移仍保留其它现有实体。已有 migration 历史或结构不同的库应先审查历史和差异，不能盲目 resolve。后续结构变更生成新 migration，不改写已应用的 SQL。
 
 演示数据与 UsageDaily 聚合从工具机运行（standalone 运行镜像不包含 Prisma CLI）：
 
@@ -90,10 +92,10 @@ DEMO_MODE=true TRACEFORGE_DEMO_UPSTREAM_URL=http://mock-upstream:8799/v1 npm run
 npm run usage:aggregate
 # 第二步启动完整服务
 
-docker compose up --build -d
+docker compose --profile demo up --build -d
 ~~~
 
-Compose 暴露 Console 3000、Gateway 8787、mock 上游 8799。仅演示环境启动 mock；正式 Provider 的 URL 与加密凭据单独配置。当前 Gateway 镜像启动时 cargo run --release，SQLx 编译需要已经准备好的数据库；这会增加冷启动时间。尚未声称交付离线编译的精简 Gateway 镜像。
+Compose 暴露 Console 3000、Gateway 8787、mock 上游 8799。仅演示环境启动 mock；正式 Provider 的 URL 与加密凭据单独配置。Gateway 采用两阶段构建：builder 使用提交的 gateway/.sqlx 元数据离线编译两个二进制；runtime 仅含二进制、CA 与健康检查工具，以 UID 1001 运行，不含 Rust/Cargo。mock 仅在 demo profile 下启动。
 
 ~~~bash
 npm run test:docker
@@ -101,11 +103,11 @@ npm run test:docker
 TRACEFORGE_E2E_IMAGE=traceforge-console:my-sha npm run test:docker
 ~~~
 
-Docker smoke 实际运行 normal、Demo、missing-key 三个 Console 容器，验证 UID 1001、登录、静态资源、看板、Chat、Eval 与故障边界；连接隔离 PostgreSQL、真实 Rust Gateway 与 mock 上游。Linux 使用 host 网络；Docker Desktop/OrbStack 使用 host.docker.internal，自动清理本轮容器和 schema。
+Docker smoke 实际运行预编译 Gateway/mock 容器及 normal、Demo、missing-key 三个 Console 容器，验证 UID 1001、登录、静态资源、看板、Chat、Eval 与故障边界；连接隔离 PostgreSQL、真实 Rust Gateway 与 mock 上游。Linux 使用 host 网络；Docker Desktop/OrbStack 使用 host.docker.internal，自动清理本轮容器和 schema。
 
 ## TLS、代理和启动验收
 
-deploy/nginx/traceforge.conf 提供反代示例：/ 到 Console，/gateway/ 到 Gateway，SSE 关闭缓冲。替换示例域名，配置真实证书与 HTTPS 跳转，并按实际 Chat/Eval 预算配置代理读取超时。Eval 最大总预算为 300 秒，默认 120 秒；平台请求时限低于预算时需要下调预算。
+deploy/nginx/traceforge.conf 提供反代示例：/ 到 Console，/gateway/ 到 Gateway，SSE 关闭缓冲。配置已经包含 HTTP→HTTPS 跳转、TLS 1.2/1.3、310 秒代理超时和内部诊断路径屏蔽。替换示例域名，在证书目录提供 fullchain.pem / privkey.pem。Eval 最大总预算为 300 秒，默认 120 秒；平台请求时限低于预算时需要下调预算。
 
 1. /healthz 返回 ok，/readyz 返回 ready；只检查存活不代表数据库可用。
 2. 打开 /login，确认 Demo 开关与账号展示符合预期；匿名 /dashboard 跳回登录。
@@ -114,3 +116,38 @@ deploy/nginx/traceforge.conf 提供反代示例：/ 到 Console，/gateway/ 到 
 5. Eval 用 demo 数据集运行，查看输出、费用、结果和重复提交行为。
 
 Chat after() 不跨进程重启恢复；未确认派发在调用超时加 10 秒后停止等待，不能自动重发状态不明的付费请求。Eval 不使用后台 Worker；超期 running 在后续页面读取时转为失败并汇总已有结果。所有这些限制都应在应用运行预算内验收。
+
+## 生产 Compose（尚未公网发布）
+
+用户当前没有服务器与域名，本轮只交付部署准备。使用 deploy/compose.production.yml，只有 Nginx 的 80/443 发布到宿主机，数据库、Gateway、Console 保持容器内部访问；不启用 Demo 或 mock。
+
+1. 将 deploy/production.env.example 复制到仓库外的私密绝对路径（chmod 600），替换全部 CHANGE_ME。数据库密码建议生成 URL-safe hex 并在 POSTGRES_PASSWORD / DATABASE_URL 中保持一致，URL 主机名为 postgres。项目 ID 用 UUID，项目 Key 为至少 24 字符随机串；保留已有 MASTER_ENCRYPTION_KEY，不擅自轮换。
+2. 将 nginx 配置复制到部署位置，替换真实域名，填写 NGINX_CONFIG_PATH 与 TLS_CERT_DIR 的绝对路径；证书由部署方申请。
+3. 从仓库根目录执行（以下 /private/production.env 为替换后的私密文件）：
+
+~~~bash
+docker compose --env-file /private/production.env -f deploy/compose.production.yml config --quiet
+docker compose --env-file /private/production.env -f deploy/compose.production.yml up -d postgres
+docker compose --env-file /private/production.env -f deploy/compose.production.yml --profile tools build
+docker compose --env-file /private/production.env -f deploy/compose.production.yml run --rm migrate
+docker compose --env-file /private/production.env -f deploy/compose.production.yml run --rm migrate node --import tsx scripts/seed-apikey.ts
+docker compose --env-file /private/production.env -f deploy/compose.production.yml run --rm migrate node --import tsx scripts/seed-deepseek.ts
+docker compose --env-file /private/production.env -f deploy/compose.production.yml up -d console gateway nginx
+~~~
+
+生产密钥初始化只创建显式指定的项目与 Key 哈希，不产生演示记录，不输出明文，不能把已有 Key 移到其它项目或重新激活撤销 Key。上游密钥加密后从配置文件删除 DEEPSEEK_API_KEY，再移除一次性初始化容器。运行 migrate profile 用 --build 可重建工具镜像；公网正式发布前仍需备份/恢复演练与真实域名验证。
+
+## SQLx 离线构建
+
+~~~bash
+cargo install sqlx-cli --version 0.8.6 --locked --no-default-features --features rustls,postgres
+# schema 修改后，先部署迁移，再从 gateway 目录重新生成并提交 .sqlx
+cd gateway
+cargo sqlx prepare -- --bins --examples
+# CI 联网数据库校验元数据漂移
+cargo sqlx prepare --check -- --bins --examples
+# 不可达数据库验证编译不依赖连接
+SQLX_OFFLINE=true DATABASE_URL=postgresql://unused:unused@127.0.0.1:1/unused cargo check --bins --examples
+~~~
+
+运行时仍需要已迁移数据库，/readyz 负责数据库就绪；离线构建不意味着离线运行。Gateway 的 Agent 完成写入仍是进程内有界队列，队列故障会留下 running Span，SDK 有界等待后报错，不伪装成功。

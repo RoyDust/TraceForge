@@ -47,3 +47,9 @@ ESLint 使用与当前 Next 配置兼容的 9.39.5；安装器提示该分支已
 ## #72 复核（2026-09-29）
 
 相同锁文件重新执行 npm audit --json，仍为 0 critical、4 high、0 moderate、4 total；建议修复仍指向 Prisma 6.19.3 的跨主版本回退。未执行强制修复。Console 交付采用 standalone；不以运行镜像裁剪替代对上游工具链风险的跟进。
+
+## #79 后续修复（2026-09-29）
+
+本轮显式将 Prisma 7.10.0 工具链的 deepmerge-ts 覆盖为 8.0.2、mysql2 覆盖为 3.24.4，没有回退 Prisma 主版本。Prisma 配置加载、Client 生成和隔离 schema 迁移已经验证。npm audit 当前为 0 vulnerabilities，后续以锁文件和 CI 复核。
+
+ESLint 升为 10.11.0。React / JSX a11y / import 插件仍声明 ESLint 9 peer，通过仅这三项的 peer override 配合官方 @eslint/compat 2.1.1 保留已有规则；Next 内置 Babel scope manager 不支持新接口，统一改用已经声明支持 ESLint 10 的 typescript-eslint 8.71.0 parser。未禁用规则，也未修改 node_modules。全仓 lint 和 typecheck 已通过；后续插件原生支持后可以移除兼容配置。Node 最低版本明确为 22.13。

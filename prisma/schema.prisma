@@ -170,6 +170,7 @@ model ModelPricing {
 
 model TraceRun {
   id              String       @id @default(uuid()) @db.Uuid
+  isAgent         Boolean      @default(false) @map("is_agent")
   projectId       String       @map("project_id") @db.Uuid
   name            String? // 网关自动调用默认取 model / endpoint; SDK 调用由业务命名
   promptVersionId String?      @map("prompt_version_id") @db.Uuid

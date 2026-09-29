@@ -1,5 +1,17 @@
 # TraceForge 任务进度
 
+## 未完成项收尾（2026-09-29，#75–#80）
+
+- [x] #76：Agent 采集接口、双 scope、同项目父子树、四方法 Node SDK 与真实写作 Agent 示例已经实现。
+- [x] #77：LLM Judge 改为真实 Gateway 调用，严格评分 JSON、预算与两次调用费用；正常/无效 JSON/超时浏览器用例通过。
+- [x] #79：Prisma 传递依赖修复、ESLint 10 兼容升级；npm audit 0 告警，lint/typecheck/9 项单测通过。
+- [x] #78：SQLx 离线 metadata、预编译非 root 镜像、HTTPS 和生产初始化完成，40 项完整容器验收通过。
+- [x] 真实中转 Agent/Judge 验收与双轴审查；审查发现 3 项均修复并复核关闭。
+- [x] 本轮交付 PR #81 已建立；最终 CI 与主线合并状态以该 PR 的 GitHub 检查及合并记录为准。
+- [ ] #80：已联网查到官方参考价，但中转没有公开可确认费率，详见 docs/verification/relay-pricing.md。实际价格仍待中转账单/后台提供，成本保持未知。
+
+本轮 9 项 Node 单测、40 项 Node 与 40 项 Docker 浏览器回归、lint/typecheck/build、SQLx 在线/离线检查、HTTPS 自签名本地验收全部通过。用户确认当前没有服务器和域名，因此公网部署不在本轮执行范围；Redis/持久队列等后置项不扩展。以下旧阶段勾选保留为历史记录，当前状态以本节及 GitHub 验收为准。
+
 ## 真实模型接入（2026-09-29）
 
 - [x] 复用 seed-deepseek.ts，通过环境配置兼容中转地址与 deepseek-v4.1-flash，Provider / Model 在同一事务内更新，密钥 AES-256-GCM 加密入库。
@@ -29,8 +41,8 @@ Standards / Spec 双轴审查的发现均已逐项修复；对应回归及 36 �
 
 - Redis、分布式限流、持久化队列、独立 Worker、多用户权限、Chat 会话持久化不在 #60 范围。
 - 公网服务器、域名、TLS 证书、真实 Provider 密钥需部署方提供；当前验收只使用 mock 上游。
-- Prisma 工具链仍有 4 个 high 包节点告警，已记录评估；不通过强制主版本回退处理。
-- 现有 Gateway 镜像仍在启动时编译；离线 SQLx metadata 与精简 Rust runtime 镜像另行处理。
+- 此处 4 high 是 #60 验收时的历史状态；#79 后续已修复，见本文首节与依赖审计记录。
+- 启动时编译是 #60 验收时的历史状态；本轮 #78 已实现离线编译与精简 runtime，并完成容器验收。
 
 ## Chat 与侧边栏交互修复（2026-07-14）
 
@@ -458,17 +470,17 @@ Stage 2 全部 6 个竖切片（GitHub issue #9-#14）实现并验证：
 
 ## Stage 2.5 · Trace API / Node SDK / 示例 Agent
 
-- [ ] Rust 数据面托管 `/api/traces/*`，只认 project API Key，不走 NextAuth。
-- [ ] 提供最薄 Node SDK：
+- [x] Rust 数据面托管 `/api/traces/*`，只认 project API Key，不走 NextAuth。
+- [x] 提供最薄 Node SDK：
   - `startRun`
   - `startSpan`
   - `endSpan`
   - `endRun`
-- [ ] 做一个示例写作 Agent：
+- [x] 做一个示例写作 Agent：
   - 选题 → 抓取资料 → 成文 → 审稿 → 保存草稿。
   - LLM 调用走网关自动 llm span。
   - tool / workflow / review 通过 SDK 手动上报。
-- [ ] 验证：一次 Agent 运行在 DB 中形成父子 Span 树。
+- [x] 验证：一次 Agent 运行在 DB 中形成父子 Span 树。
 
 ## Stage 3 · Console 让 Trace 可读
 
