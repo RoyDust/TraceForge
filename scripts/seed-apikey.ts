@@ -26,6 +26,28 @@ async function main() {
     adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }, schema ? { schema } : undefined),
   });
 
+  // Production setup uses explicit keys and never prints plaintext credentials.
+  const projectId = process.env.TRACEFORGE_PROJECT_ID;
+  if (projectId) {
+    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(projectId)) throw new Error("TRACEFORGE_PROJECT_ID 必须为 UUID");
+    const name = process.env.TRACEFORGE_PROJECT_NAME?.trim();
+    const keys = [process.env.TRACEFORGE_CHAT_API_KEY?.trim(), process.env.TRACEFORGE_EVAL_API_KEY?.trim()];
+    if (!name || keys.some((key) => !key || key.length < 24 || Object.values(KEYS).includes(key))) throw new Error("生产初始化需要项目名称和至少 24 字符的自有 Chat/Eval 项目 Key");
+    await prisma.$transaction(async (tx) => {
+      await tx.project.upsert({ where: { id: projectId }, update: {}, create: { id: projectId, name } });
+      for (const key of new Set(keys)) {
+        const keyHash = sha256(key!);
+        const existing = await tx.apiKey.findUnique({ where: { keyHash } });
+        if (existing && (existing.projectId !== projectId || existing.status !== "active" || existing.revokedAt || (existing.expiresAt && existing.expiresAt <= new Date()) || !existing.scope.includes("gateway") || !existing.scope.includes("trace_ingest"))) throw new Error("项目 Key 已存在但归属、状态或权限不匹配；不会覆盖或重新激活");
+        if (!existing) await tx.apiKey.create({ data: { projectId, name: "Console and Agent", keyHash, scope: ["gateway", "trace_ingest"] } });
+      }
+    });
+    await prisma.$disconnect();
+    console.log("Production project and hashed API keys are ready; no plaintext keys printed.");
+    return;
+  }
+  if (process.env.DEMO_MODE !== "true") throw new Error("固定测试 Key 仅允许 DEMO_MODE=true；生产请设置 TRACEFORGE_PROJECT_ID/NAME 与自有 Key");
+
   await prisma.apiKey.upsert({
     where: { id: ID.valid },
     update: {},

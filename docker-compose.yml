@@ -57,7 +57,8 @@ services:
     build:
       context: .
       dockerfile: gateway/Dockerfile
-    command: ["cargo", "run", "--release", "--bin", "mock_upstream"]
+    command: ["mock_upstream"]
+    profiles: ["demo"]
     environment:
       MOCK_ADDR: 0.0.0.0:8799
     ports:

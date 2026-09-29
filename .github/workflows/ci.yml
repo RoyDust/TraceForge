@@ -58,6 +58,11 @@ jobs:
           workspaces: gateway
       - working-directory: gateway
         run: cargo build --bins --examples
+      - run: cargo install sqlx-cli --version 0.8.6 --locked --no-default-features --features rustls,postgres
+      - working-directory: gateway
+        run: cargo sqlx prepare --check -- --bins --examples
+      - working-directory: gateway
+        run: SQLX_OFFLINE=true DATABASE_URL=postgresql://unreachable:unreachable@127.0.0.1:1/unreachable cargo check --bins --examples
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - name: Record dependency audit without forced remediation

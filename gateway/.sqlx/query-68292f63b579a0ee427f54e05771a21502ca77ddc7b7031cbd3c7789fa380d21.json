@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, project_id, scope::text[] as \"scope!\", status, expires_at, revoked_at, rpm_limit, concurrency_limit\n           FROM api_key WHERE key_hash = $1 LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "project_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "scope!",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 3,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "expires_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "revoked_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 6,
+        "name": "rpm_limit",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "concurrency_limit",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "68292f63b579a0ee427f54e05771a21502ca77ddc7b7031cbd3c7789fa380d21"
+}

@@ -60,6 +60,6 @@ test("all six existing Eval assertion modes remain available", async () => {
   assert.equal(evaluateAssertion({ ...base, assertionType: "contains" }, "say hello").status, "passed");
   assert.equal(evaluateAssertion({ ...base, assertionType: "regex", assertionConfig: { pattern: "^hello$" } }, "hello").status, "passed");
   assert.equal(evaluateAssertion({ ...base, assertionType: "json_schema", assertionConfig: { required: ["answer"], properties: { answer: { type: "string" } } } }, '{"answer":"hello"}').status, "passed");
-  assert.equal(evaluateAssertion({ ...base, assertionType: "llm_judge", assertionConfig: { pass_keywords: ["hello"] } }, "hello").status, "passed");
+  assert.throws(() => evaluateAssertion({ ...base, assertionType: "llm_judge", assertionConfig: { pass_keywords: ["hello"] } }, "hello"), /必须通过 Gateway/);
   assert.equal(evaluateAssertion({ ...base, assertionType: "manual_review" }, "hello").status, "needs_review");
 });

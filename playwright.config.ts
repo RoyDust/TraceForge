@@ -4,6 +4,7 @@ const consolePort = process.env.TRACEFORGE_E2E_PORT ?? "3131";
 const gatewayPort = process.env.TRACEFORGE_E2E_GATEWAY_PORT ?? "18799";
 const upstreamPort = process.env.TRACEFORGE_E2E_UPSTREAM_PORT ?? "18800";
 const baseURL = "http://127.0.0.1:" + consolePort;
+const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 
 function consoleServer(mode: string, port: string, overrides: Record<string, string> = {}): Exclude<NonNullable<PlaywrightTestConfig["webServer"]>, unknown[]> {
   const image = process.env.TRACEFORGE_E2E_IMAGE;
@@ -18,10 +19,27 @@ function consoleServer(mode: string, port: string, overrides: Record<string, str
     }
     Object.assign(env, { HOSTNAME: hostNetwork ? "127.0.0.1" : "0.0.0.0", PORT: hostNetwork ? port : "3000" });
     const keys = ["DATABASE_URL", "DEMO_MODE", "ADMIN_EMAIL", "ADMIN_PASSWORD_HASH", "TRACEFORGE_CHAT_GATEWAY_URL", "TRACEFORGE_CHAT_API_KEY", "TRACEFORGE_CHAT_MODEL", "TRACEFORGE_CHAT_TIMEOUT_MS", "TRACEFORGE_EVAL_GATEWAY_URL", "TRACEFORGE_EVAL_API_KEY", "TRACEFORGE_EVAL_TIMEOUT_MS", "TRACEFORGE_EVAL_TOTAL_TIMEOUT_MS", "TRACEFORGE_EVAL_MAX_CASES", "HOSTNAME", "PORT"];
-    const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
     command = ["docker run --rm --name", quote(process.env.TRACEFORGE_E2E_CONTAINER + "-" + mode), hostNetwork ? "--network host" : "-p 127.0.0.1:" + port + ":3000", ...keys.map((key) => "-e " + key), quote(image)].join(" ");
   }
   return { command, url: "http://127.0.0.1:" + port + "/login", env, reuseExistingServer: false, timeout: 60000 };
+}
+
+function backendServer(mode: "gateway" | "upstream", port: string) {
+  const mock = mode === "upstream";
+  const image = process.env.TRACEFORGE_E2E_GATEWAY_IMAGE;
+  const hostNetwork = process.platform === "linux";
+  const containerPort = mock ? "8799" : "8787";
+  const env: Record<string, string> = {};
+  env[mock ? "MOCK_ADDR" : "GATEWAY_ADDR"] = (image && !hostNetwork ? "0.0.0.0:" + containerPort : "127.0.0.1:" + port);
+  if (!mock) {
+    const url = new URL(process.env.TRACEFORGE_GATEWAY_DATABASE_URL!);
+    if (image && !hostNetwork && ["localhost", "127.0.0.1"].includes(url.hostname)) url.hostname = "host.docker.internal";
+    env.DATABASE_URL = url.toString();
+    env.MASTER_ENCRYPTION_KEY = process.env.MASTER_ENCRYPTION_KEY!;
+  }
+  const binary = mock ? "mock_upstream" : "traceforge-gateway";
+  const command = image ? ["docker run --rm --name", quote(process.env.TRACEFORGE_E2E_CONTAINER + "-" + mode), hostNetwork ? "--network host" : "-p 127.0.0.1:" + port + ":" + containerPort, ...Object.keys(env).map((key) => "-e " + key), quote(image), binary].join(" ") : "./gateway/target/debug/" + binary;
+  return { command, url: "http://127.0.0.1:" + port + (mock ? "/healthz" : "/readyz"), env, reuseExistingServer: false, timeout: 60000 };
 }
 
 export default defineConfig({
@@ -38,19 +56,8 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: [
-    {
-      command: "cargo run --quiet --manifest-path gateway/Cargo.toml --bin mock_upstream",
-      url: "http://127.0.0.1:" + upstreamPort + "/healthz",
-      env: { MOCK_ADDR: "127.0.0.1:" + upstreamPort },
-      reuseExistingServer: false,
-      timeout: 120_000,
-    },
-    {
-      command: "./gateway/target/debug/traceforge-gateway",
-      url: "http://127.0.0.1:" + gatewayPort + "/readyz",
-      env: { DATABASE_URL: process.env.TRACEFORGE_GATEWAY_DATABASE_URL!, GATEWAY_ADDR: "127.0.0.1:" + gatewayPort },
-      reuseExistingServer: false, timeout: 60000,
-    },
+    backendServer("upstream", upstreamPort),
+    backendServer("gateway", gatewayPort),
     consoleServer("demo", process.env.TRACEFORGE_E2E_DEMO_PORT!, { DEMO_MODE: "true", ADMIN_EMAIL: "", ADMIN_PASSWORD_HASH: "", TRACEFORGE_CHAT_API_KEY: "e2e-unregistered-key" }),
     consoleServer("no-key", process.env.TRACEFORGE_E2E_NO_KEY_PORT!, { TRACEFORGE_CHAT_API_KEY: "", TRACEFORGE_EVAL_API_KEY: "" }),
     consoleServer("normal", consolePort, { TRACEFORGE_CHAT_MODEL: "mock-mid" }),

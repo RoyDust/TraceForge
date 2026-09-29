@@ -4,6 +4,7 @@
 //! SSE 流式 / 限流 / 鉴权 / Trace 采集见 PRD Stage 1+。
 //! 双 ORM 闸门冒烟测试在 examples/sqlx_smoke.rs。
 
+mod ingest;
 mod trace;
 
 use std::collections::HashMap;
@@ -200,6 +201,16 @@ async fn main() -> Result<()> {
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics))
         .route("/v1/chat/completions", post(chat_completions))
+        .nest(
+            "/api/traces",
+            Router::new()
+                .route("/runs", post(ingest::start_run))
+                .route("/runs/{run}", get(ingest::get_run))
+                .route("/runs/{run}/end", post(ingest::end_run))
+                .route("/runs/{run}/spans", post(ingest::start_span))
+                .route("/runs/{run}/spans/{span}/end", post(ingest::end_span))
+                .layer(axum::extract::DefaultBodyLimit::max(65536)),
+        )
         .with_state(AppState {
             pool,
             http,
@@ -334,6 +345,7 @@ fn submit_rejected_trace(
         project_id,
         run_id,
         span_id: Uuid::new_v4(),
+        agent_run: false,
         model: "gateway_rejected".to_string(),
         provider: "gateway".to_string(),
         status: "failed",
@@ -410,7 +422,11 @@ fn decrypt(b64_ciphertext: &str, master_key_b64: &str) -> Result<String> {
 }
 
 /// 校验 project API Key (S4): Bearer -> sha256 -> 内存缓存/查 PG -> 校验 scope/状态/过期。
-async fn authenticate(st: &AppState, headers: &HeaderMap) -> Result<AuthedKey, AuthError> {
+async fn authenticate(
+    st: &AppState,
+    headers: &HeaderMap,
+    required_scope: &str,
+) -> Result<AuthedKey, AuthError> {
     let token = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -432,7 +448,12 @@ async fn authenticate(st: &AppState, headers: &HeaderMap) -> Result<AuthedKey, A
     let key_hash = hex::encode(Sha256::digest(token.as_bytes()));
 
     // 命中内存缓存且未过期则直接返回 (撤销随 TTL 失效)。
-    if let Some((ak, at)) = st.auth_cache.lock().unwrap().get(&key_hash) {
+    if let Some((ak, at)) = st
+        .auth_cache
+        .lock()
+        .unwrap()
+        .get(&format!("{required_scope}:{key_hash}"))
+    {
         if at.elapsed() < AUTH_TTL {
             return Ok(ak.clone());
         }
@@ -494,12 +515,12 @@ async fn authenticate(st: &AppState, headers: &HeaderMap) -> Result<AuthedKey, A
             });
         }
     }
-    if !row.scope.iter().any(|s| s == "gateway") {
+    if !row.scope.iter().any(|s| s == required_scope) {
         return Err(AuthError {
             status: StatusCode::UNAUTHORIZED,
             typ: "invalid_request_error",
             code: "invalid_api_key",
-            message: "API key 无 gateway 权限",
+            message: "API key 权限不足",
             project_id: Some(row.project_id),
         });
     }
@@ -510,10 +531,10 @@ async fn authenticate(st: &AppState, headers: &HeaderMap) -> Result<AuthedKey, A
         rpm_limit: row.rpm_limit,
         concurrency_limit: row.concurrency_limit,
     };
-    st.auth_cache
-        .lock()
-        .unwrap()
-        .insert(key_hash, (ak.clone(), Instant::now()));
+    st.auth_cache.lock().unwrap().insert(
+        format!("{required_scope}:{key_hash}"),
+        (ak.clone(), Instant::now()),
+    );
     Ok(ak)
 }
 
@@ -528,7 +549,7 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
         start: Instant::now(),
     };
 
-    let authed = match authenticate(&st, &headers).await {
+    let authed = match authenticate(&st, &headers, "gateway").await {
         Ok(a) => a,
         Err(auth_err) => {
             if let Some(project_id) = auth_err.project_id {
@@ -545,6 +566,47 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
         }
     };
 
+    let parse_context = |name: &str| -> Result<Option<Uuid>, Response> {
+        headers
+            .get(name)
+            .map(|v| {
+                v.to_str()
+                    .ok()
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .ok_or_else(|| {
+                        err(
+                            StatusCode::BAD_REQUEST,
+                            "invalid_request_error",
+                            "invalid_trace_context",
+                            "Trace 上下文必须是 UUID",
+                        )
+                    })
+            })
+            .transpose()
+    };
+    let agent_run_id = match parse_context("x-traceforge-agent-run-id") {
+        Ok(id) => id,
+        Err(e) => return e,
+    };
+    let parent_id = match parse_context("x-traceforge-parent-span-id") {
+        Ok(id) => id,
+        Err(e) => return e,
+    };
+    if (parent_id.is_some() && agent_run_id.is_none())
+        || (agent_run_id.is_some() && headers.contains_key(TRACE_RUN_ID_HEADER))
+    {
+        return err(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_error",
+            "invalid_trace_context",
+            "Agent Run 头与预声明 Run 头互斥；父 Span 需要 Agent Run",
+        );
+    }
+    if agent_run_id.is_some() {
+        if let Err(error) = authenticate(&st, &headers, "trace_ingest").await {
+            return error.response();
+        }
+    }
     let predeclared_run_id = match parse_trace_run_id(&headers) {
         Ok(value) => value,
         Err(response) => return response,
@@ -554,7 +616,10 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
             return response;
         }
     }
-    let run_id = predeclared_run_id.unwrap_or_else(Uuid::new_v4);
+    let run_id = agent_run_id
+        .or(predeclared_run_id)
+        .unwrap_or_else(Uuid::new_v4);
+    let span_id = Uuid::new_v4();
 
     let parsed: Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
@@ -590,14 +655,16 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
     let input_text = trace::extract_input(&parsed);
 
     let reject = |code: &'static str, message: &'static str| {
-        submit_rejected_trace(
-            &st.trace,
-            authed.project_id,
-            run_id,
-            code,
-            input_text.clone(),
-            started_at,
-        );
+        if agent_run_id.is_none() {
+            submit_rejected_trace(
+                &st.trace,
+                authed.project_id,
+                run_id,
+                code,
+                input_text.clone(),
+                started_at,
+            );
+        }
         with_trace_run_id(
             err(
                 StatusCode::TOO_MANY_REQUESTS,
@@ -650,38 +717,45 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
     };
     let has_fallback = chain.len() > 1;
 
-    match trace::begin_run(
-        &st.pool,
-        &trace::TraceBegin {
-            project_id: authed.project_id,
-            run_id,
-            name: model.to_string(),
-            input_text: input_text.clone(),
-            started_at,
-        },
-    )
-    .await
-    {
-        Ok(()) => {}
-        Err(trace::BeginRunError::Conflict) => {
-            return err(
-                StatusCode::CONFLICT,
-                "invalid_request_error",
-                "trace_run_id_conflict",
-                "X-TraceForge-Run-Id 已存在",
-            )
+    if agent_run_id.is_some() {
+        if let Err(response) =
+            ingest::reserve_llm(&st, authed.project_id, run_id, span_id, parent_id, model).await
+        {
+            return response;
         }
-        Err(trace::BeginRunError::Sql(error)) => {
-            eprintln!("[trace] 创建 running TraceRun 失败 run_id={run_id} err={error}");
-            return err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "api_error",
-                "internal_error",
-                "创建 TraceRun 失败",
-            );
+    } else {
+        match trace::begin_run(
+            &st.pool,
+            &trace::TraceBegin {
+                project_id: authed.project_id,
+                run_id,
+                name: model.to_string(),
+                input_text: input_text.clone(),
+                started_at,
+            },
+        )
+        .await
+        {
+            Ok(()) => {}
+            Err(trace::BeginRunError::Conflict) => {
+                return err(
+                    StatusCode::CONFLICT,
+                    "invalid_request_error",
+                    "trace_run_id_conflict",
+                    "X-TraceForge-Run-Id 已存在",
+                )
+            }
+            Err(trace::BeginRunError::Sql(error)) => {
+                eprintln!("[trace] 创建 running TraceRun 失败 run_id={run_id} err={error}");
+                return err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "api_error",
+                    "internal_error",
+                    "创建 TraceRun 失败",
+                );
+            }
         }
     }
-
     let mut last_status = StatusCode::BAD_GATEWAY;
     let mut last_code = "upstream_error";
     let mut last_error_summary: Option<String> = None;
@@ -730,6 +804,8 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
                         trace: st.trace.clone(),
                         project_id: authed.project_id,
                         run_id,
+                        span_id,
+                        agent_run: agent_run_id.is_some(),
                         model: hop.model_name.clone(),
                         provider: hop.provider_name.clone(),
                         input_text: input_text.clone(),
@@ -777,7 +853,8 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
                 st.trace.submit(trace::TraceJob {
                     project_id: authed.project_id,
                     run_id,
-                    span_id: Uuid::new_v4(),
+                    span_id,
+                    agent_run: agent_run_id.is_some(),
                     model: hop.model_name.clone(),
                     provider: hop.provider_name.clone(),
                     status: job_status,
@@ -855,7 +932,8 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
     st.trace.submit(trace::TraceJob {
         project_id: authed.project_id,
         run_id,
-        span_id: Uuid::new_v4(),
+        span_id,
+        agent_run: agent_run_id.is_some(),
         model: failed_hop.model_name.clone(),
         provider: failed_hop.provider_name.clone(),
         status: "failed",
@@ -956,6 +1034,8 @@ struct StreamCtx {
     trace: trace::TraceWriter,
     project_id: Uuid,
     run_id: Uuid,
+    span_id: Uuid,
+    agent_run: bool,
     model: String,
     provider: String,
     input_text: Option<String>,
@@ -1130,7 +1210,8 @@ impl StreamTrace {
         self.ctx.trace.submit(trace::TraceJob {
             project_id: self.ctx.project_id,
             run_id: self.ctx.run_id,
-            span_id: Uuid::new_v4(),
+            span_id: self.ctx.span_id,
+            agent_run: self.ctx.agent_run,
             model: self.ctx.model.clone(),
             provider: self.ctx.provider.clone(),
             status,

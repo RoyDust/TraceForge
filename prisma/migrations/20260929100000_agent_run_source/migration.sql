@@ -1,0 +1,1 @@
+ALTER TABLE trace_run ADD COLUMN is_agent BOOLEAN NOT NULL DEFAULT false;

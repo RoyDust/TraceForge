@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO trace_run\n             (id, project_id, name, status, input_preview, started_at)\n           VALUES ($1,$2,$3,'running'::trace_status,$4,$5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Timestamp"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b856f6f9f1e02c7fa30276eb2df4e226ef7b874f8dc20ecdeb2bb1d3cb67b6bf"
+}

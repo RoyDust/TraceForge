@@ -7,7 +7,7 @@ AI 网关 + Agent 可观测平台。把 AI 调用做到「可观测、可归因�
 ### Trace 家族
 
 **TraceRun**（简称 Run）：
-一次端到端调用——「一次网关请求」或「一个 Agent 任务」。调用树的根，恒有 ≥1 个 Span。
+一次端到端调用——「一次网关请求」或「一个 Agent 任务」。调用树的根。网关拒绝或尚未开始执行的任务可以没有 Span；Agent 任务由调用方显式结束。
 _Avoid_: trace（作实体名）、session、request（作实体名）
 
 **TraceSpan**（简称 Span）：

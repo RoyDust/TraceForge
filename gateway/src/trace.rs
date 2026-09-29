@@ -29,6 +29,7 @@ pub struct TraceJob {
     pub project_id: Uuid,
     pub run_id: Uuid,
     pub span_id: Uuid,
+    pub agent_run: bool,
     pub model: String,
     pub provider: String,
     pub status: &'static str,
@@ -195,8 +196,21 @@ async fn write_once(pool: &PgPool, job: &TraceJob) -> Result<(), sqlx::Error> {
     let cost = lookup_cost(pool, job, prompt_tokens, completion_tokens).await?;
 
     let mut tx = pool.begin().await?;
-
-    sqlx::query!(
+    if job.agent_run {
+        sqlx::query(
+            "SELECT id FROM trace_run WHERE id=$1 AND project_id=$2 AND is_agent=true FOR UPDATE",
+        )
+        .bind(job.run_id)
+        .bind(job.project_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        let pending: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM trace_span WHERE id=$1 AND run_id=$2 AND status='running')")
+            .bind(job.span_id).bind(job.run_id).fetch_one(&mut *tx).await?;
+        if !pending {
+            return tx.commit().await;
+        }
+    } else {
+        sqlx::query!(
         r#"INSERT INTO trace_run
              (id, project_id, name, status, error_code, input_preview, output_preview,
               total_tokens, cost, usage_source, latency_ms, started_at, ended_at)
@@ -228,14 +242,21 @@ async fn write_once(pool: &PgPool, job: &TraceJob) -> Result<(), sqlx::Error> {
     )
     .execute(&mut *tx)
     .await?;
-
+    }
     if job.has_span {
         sqlx::query!(
             r#"INSERT INTO trace_span
                  (id, run_id, type, name, model, provider, input_preview, output_preview,
                   prompt_tokens, completion_tokens, usage_source, latency_ms, status, error_code, error,
                   cost, started_at, ended_at)
-               VALUES ($1,$2,'llm',$3,$4,$5,$6,$7,$8,$9,$10::text::usage_source,$11,$12::text::trace_status,$13,$14,($15::float8)::numeric,$16,$17)"#,
+               VALUES ($1,$2,'llm',$3,$4,$5,$6,$7,$8,$9,$10::text::usage_source,$11,$12::text::trace_status,$13,$14,($15::float8)::numeric,$16,$17)
+               ON CONFLICT (id) DO UPDATE SET
+                 name=EXCLUDED.name, model=EXCLUDED.model, provider=EXCLUDED.provider,
+                 input_preview=EXCLUDED.input_preview, output_preview=EXCLUDED.output_preview,
+                 prompt_tokens=EXCLUDED.prompt_tokens, completion_tokens=EXCLUDED.completion_tokens,
+                 usage_source=EXCLUDED.usage_source, latency_ms=EXCLUDED.latency_ms,
+                 status=EXCLUDED.status, error_code=EXCLUDED.error_code, error=EXCLUDED.error,
+                 cost=EXCLUDED.cost, started_at=EXCLUDED.started_at, ended_at=EXCLUDED.ended_at"#,
             job.span_id,
             job.run_id,
             job.model,
@@ -273,6 +294,10 @@ async fn write_once(pool: &PgPool, job: &TraceJob) -> Result<(), sqlx::Error> {
         }
     }
 
+    if job.agent_run {
+        sqlx::query("UPDATE trace_run SET total_tokens=a.tokens, cost=a.cost, usage_source=a.source::text::usage_source FROM (SELECT sum(COALESCE(prompt_tokens,0)+COALESCE(completion_tokens,0))::int AS tokens, CASE WHEN bool_or(cost IS NULL) THEN NULL ELSE sum(cost) END AS cost, CASE WHEN bool_or(usage_source='estimated') THEN 'estimated' WHEN bool_or(usage_source='provider') THEN 'provider' ELSE NULL END AS source FROM trace_span WHERE run_id=$1 AND type='llm') a WHERE id=$1")
+            .bind(job.run_id).execute(&mut *tx).await?;
+    }
     tx.commit().await
 }
 

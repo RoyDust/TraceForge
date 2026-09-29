@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO trace_run\n             (id, project_id, name, status, error_code, input_preview, output_preview,\n              total_tokens, cost, usage_source, latency_ms, started_at, ended_at)\n           VALUES ($1,$2,$3,$4::text::trace_status,$5,$6,$7,$8,($9::float8)::numeric,$10::text::usage_source,$11,$12,$13)\n           ON CONFLICT (id) DO UPDATE SET\n             name = EXCLUDED.name,\n             status = EXCLUDED.status,\n             error_code = EXCLUDED.error_code,\n             input_preview = EXCLUDED.input_preview,\n             output_preview = EXCLUDED.output_preview,\n             total_tokens = EXCLUDED.total_tokens,\n             cost = EXCLUDED.cost,\n             usage_source = EXCLUDED.usage_source,\n             latency_ms = EXCLUDED.latency_ms,\n             ended_at = EXCLUDED.ended_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Float8",
+        "Text",
+        "Int4",
+        "Timestamp",
+        "Timestamp"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a2567dad14e13f5434c1f5c03750661ec915da5443de74a73880fbecb7ae0f33"
+}
