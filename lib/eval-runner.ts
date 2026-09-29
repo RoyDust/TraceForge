@@ -203,7 +203,7 @@ export async function refreshEvalRunSummary(db: Prisma.TransactionClient, evalRu
   const scores = results.flatMap((result) => result.score === null ? [] : [result.score]);
   const averageScore = scores.length ? scores.reduce((sum, score) => sum.plus(score), new Prisma.Decimal(0)).div(scores.length) : null;
   const costs = results.flatMap((result) => result.cost === null ? [] : [result.cost]);
-  const totalCost = costs.length ? costs.reduce((sum, cost) => sum.plus(cost), new Prisma.Decimal(0)) : null;
+  const totalCost = costs.length && costs.length === results.length ? costs.reduce((sum, cost) => sum.plus(cost), new Prisma.Decimal(0)) : null;
   const status = run.status === "failed" ? "failed" : results.some((r) => r.status === "pending") ? "running" : results.some((r) => r.status === "error") ? "failed" : results.some((r) => r.status === "needs_review") ? "needs_review" : "completed";
   await db.evalRun.updateMany({ where: { id: evalRunId }, data: { status, averageScore, totalCost, durationMs: results.reduce((sum, r) => sum + (r.durationMs ?? 0), 0) } });
 }

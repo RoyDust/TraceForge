@@ -15,17 +15,21 @@ const trace = createTraceClient({ gatewayUrl, apiKey });
 const runId = await trace.startRun({ name: "Writing Agent", input: source.toString() });
 console.log("Agent Run: " + runId);
 const workflow = await trace.startSpan(runId, { name: "选题 → 资料 → 成文 → 审稿 → 保存", type: "workflow" });
+let uncertainLifecycle = false;
 
 async function step(name, type, fn) {
   const id = await trace.startSpan(runId, { parentId: workflow, name, type });
+  let output;
   try {
-    const output = await fn(id);
-    await trace.endSpan(runId, id, { output });
-    return output;
+    output = await fn(id);
   } catch (error) {
-    await trace.endSpan(runId, id, { status: "failed", errorCode: "agent_step_failed", error: error.message });
+    try { await trace.endSpan(runId, id, { status: "failed", errorCode: "agent_step_failed", error: error.message }); }
+    catch (closeError) { uncertainLifecycle = true; console.error("Span completion unconfirmed for Run " + runId + ": " + closeError.message); }
     throw error;
   }
+  try { await trace.endSpan(runId, id, { output }); }
+  catch (error) { uncertainLifecycle = true; throw error; }
+  return output;
 }
 
 async function modelCall(parentId, prompt) {
@@ -64,11 +68,16 @@ try {
     await writeFile(outputPath, "# " + topic + "\n\n" + draft + "\n\n## 审稿意见\n\n" + review + "\n\n来源：" + source + "\n", { flag: "wx" });
     return outputPath;
   });
-  await trace.endSpan(runId, workflow, { output: outputPath });
-  await trace.endRun(runId, { output: outputPath });
-  console.log("Draft saved: " + outputPath);
 } catch (error) {
-  await trace.endSpan(runId, workflow, { status: "failed", errorCode: "agent_failed", error: error.message });
-  await trace.endRun(runId, { status: "failed", errorCode: "agent_failed" });
+  if (!uncertainLifecycle) {
+    try {
+      await trace.endSpan(runId, workflow, { status: "failed", errorCode: "agent_failed", error: error.message });
+      await trace.endRun(runId, { status: "failed", errorCode: "agent_failed" });
+    } catch (closeError) { console.error("Agent completion unconfirmed for Run " + runId + ": " + closeError.message); }
+  }
   throw error;
 }
+// Keep completion outside the business-error handler: lost replies must not cause a second write.
+await trace.endSpan(runId, workflow, { output: outputPath });
+await trace.endRun(runId, { output: outputPath });
+console.log("Draft saved: " + outputPath);

@@ -333,15 +333,45 @@ impl AuthError {
     }
 }
 
-fn submit_rejected_trace(
-    trace: &trace::TraceWriter,
+async fn submit_rejected_trace(
+    st: &AppState,
     project_id: Uuid,
     run_id: Uuid,
     error_code: &'static str,
     input_text: Option<String>,
     started_at: NaiveDateTime,
-) {
-    trace.submit(trace::TraceJob {
+) -> Result<(), Response> {
+    match trace::begin_run(
+        &st.pool,
+        &trace::TraceBegin {
+            project_id,
+            run_id,
+            name: "gateway_rejected".to_string(),
+            input_text: input_text.clone(),
+            started_at,
+        },
+    )
+    .await
+    {
+        Ok(()) => {}
+        Err(trace::BeginRunError::Conflict) => {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "invalid_request_error",
+                "trace_run_id_conflict",
+                "X-TraceForge-Run-Id 已存在",
+            ))
+        }
+        Err(trace::BeginRunError::Sql(_)) => {
+            return Err(err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "api_error",
+                "internal_error",
+                "TraceRun 预留失败",
+            ))
+        }
+    }
+    st.trace.submit(trace::TraceJob {
         project_id,
         run_id,
         span_id: Uuid::new_v4(),
@@ -361,6 +391,7 @@ fn submit_rejected_trace(
         has_span: false,
         events: Vec::new(),
     });
+    Ok(())
 }
 
 fn ensure_stream_usage(body: &mut Value) {
@@ -553,14 +584,15 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
         Ok(a) => a,
         Err(auth_err) => {
             if let Some(project_id) = auth_err.project_id {
-                submit_rejected_trace(
-                    &st.trace,
+                let _ = submit_rejected_trace(
+                    &st,
                     project_id,
                     Uuid::new_v4(),
                     auth_err.code,
                     None,
                     started_at,
-                );
+                )
+                .await;
             }
             return auth_err.response();
         }
@@ -654,16 +686,20 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
         .unwrap_or(false);
     let input_text = trace::extract_input(&parsed);
 
-    let reject = |code: &'static str, message: &'static str| {
+    let reject = async |code: &'static str, message: &'static str| {
         if agent_run_id.is_none() {
-            submit_rejected_trace(
-                &st.trace,
+            if let Err(response) = submit_rejected_trace(
+                &st,
                 authed.project_id,
                 run_id,
                 code,
                 input_text.clone(),
                 started_at,
-            );
+            )
+            .await
+            {
+                return response;
+            }
         }
         with_trace_run_id(
             err(
@@ -680,7 +716,7 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
     if let Some(limit) = authed.rpm_limit {
         if st.limiter.check_rpm(authed.id, limit).is_err() {
             st.metrics.rate_limited_total.fetch_add(1, Relaxed);
-            return reject("rate_limited", "超过 RPM 限制");
+            return reject("rate_limited", "超过 RPM 限制").await;
         }
     }
     // 并发 guard 持有到流结束 (move 进 body); 超限拒绝。
@@ -689,7 +725,7 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
             Ok(g) => Some(g),
             Err(_) => {
                 st.metrics.rate_limited_total.fetch_add(1, Relaxed);
-                return reject("concurrency_limited", "超过并发限制");
+                return reject("concurrency_limited", "超过并发限制").await;
             }
         },
         None => None,

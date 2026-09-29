@@ -32,7 +32,7 @@ async function main() {
     if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(projectId)) throw new Error("TRACEFORGE_PROJECT_ID 必须为 UUID");
     const name = process.env.TRACEFORGE_PROJECT_NAME?.trim();
     const keys = [process.env.TRACEFORGE_CHAT_API_KEY?.trim(), process.env.TRACEFORGE_EVAL_API_KEY?.trim()];
-    if (!name || keys.some((key) => !key || key.length < 24 || Object.values(KEYS).includes(key))) throw new Error("生产初始化需要项目名称和至少 24 字符的自有 Chat/Eval 项目 Key");
+    if (!name || keys.some((key) => !key || key.length < 24 || key.includes("CHANGE_ME") || Object.values(KEYS).includes(key))) throw new Error("生产初始化需要项目名称和至少 24 字符的自有 Chat/Eval 项目 Key");
     await prisma.$transaction(async (tx) => {
       await tx.project.upsert({ where: { id: projectId }, update: {}, create: { id: projectId, name } });
       for (const key of new Set(keys)) {

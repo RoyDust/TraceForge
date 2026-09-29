@@ -210,7 +210,7 @@ async fn write_once(pool: &PgPool, job: &TraceJob) -> Result<(), sqlx::Error> {
             return tx.commit().await;
         }
     } else {
-        sqlx::query!(
+        let written = sqlx::query!(
         r#"INSERT INTO trace_run
              (id, project_id, name, status, error_code, input_preview, output_preview,
               total_tokens, cost, usage_source, latency_ms, started_at, ended_at)
@@ -225,7 +225,9 @@ async fn write_once(pool: &PgPool, job: &TraceJob) -> Result<(), sqlx::Error> {
              cost = EXCLUDED.cost,
              usage_source = EXCLUDED.usage_source,
              latency_ms = EXCLUDED.latency_ms,
-             ended_at = EXCLUDED.ended_at"#,
+             ended_at = EXCLUDED.ended_at
+           WHERE trace_run.project_id = EXCLUDED.project_id
+             AND NOT trace_run.is_agent AND trace_run.status = 'running'"#,
         job.run_id,
         job.project_id,
         job.model,
@@ -242,6 +244,9 @@ async fn write_once(pool: &PgPool, job: &TraceJob) -> Result<(), sqlx::Error> {
     )
     .execute(&mut *tx)
     .await?;
+        if written.rows_affected() == 0 {
+            return tx.commit().await;
+        }
     }
     if job.has_span {
         sqlx::query!(

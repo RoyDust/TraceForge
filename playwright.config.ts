@@ -48,7 +48,8 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   workers: 1,
-  reporter: [["list"], ["html", { open: "never" }]],
+  outputDir: "test-results/" + (process.env.TRACEFORGE_E2E_IMAGE ? "docker" : "node"),
+  reporter: [["list"], ["html", { open: "never", outputFolder: "playwright-report/" + (process.env.TRACEFORGE_E2E_IMAGE ? "docker" : "node") }]],
   use: {
     baseURL,
     trace: "retain-on-failure",

@@ -6,7 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
  */
 export function createTraceClient({ gatewayUrl, apiKey, timeoutMs = 10000 }) {
   const base = new URL(gatewayUrl);
-  if (!["http:", "https:"].includes(base.protocol) || !apiKey || !Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("Invalid TraceForge client configuration");
+  if (!["http:", "https:"].includes(base.protocol) || base.username || base.password || base.search || base.hash || !apiKey || !Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("Invalid TraceForge client configuration");
   const url = base.toString().replace(/\/$/, "") + "/api/traces/runs";
   const segment = (id) => encodeURIComponent(id);
   async function request(path, data, remainingMs = timeoutMs) {
