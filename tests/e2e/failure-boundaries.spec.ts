@@ -179,7 +179,14 @@ test("rejected Chat dispatch expires without a fabricated Run or automatic resen
   expect((await authed(page, path)).status()).toBe(200);
   await page.goto(demo + accepted.traceUrl);
   await expect(page.getByRole("heading", { name: "正在等待网关接受请求" })).toBeVisible();
-  if (process.env.TRACEFORGE_E2E_IMAGE) execFileSync("docker", ["restart", "--time", "1", process.env.TRACEFORGE_E2E_CONTAINER + "-demo"], { timeout: 30000, stdio: "pipe" });
+  if (process.env.TRACEFORGE_E2E_IMAGE) {
+    execFileSync("docker", ["restart", "--time", "1", process.env.TRACEFORGE_E2E_CONTAINER + "-demo"], { timeout: 30000, stdio: "pipe" });
+    await expect.poll(async () => {
+      try { return (await page.request.get(demo + "/login")).status(); }
+      catch { return 0; } // Restart deliberately breaks existing sockets until Next is ready.
+    }, { timeout: 10000 }).toBe(200);
+    await page.reload();
+  }
   await expect.poll(async () => (await authed(page, path)).status(), { timeout: 15000, intervals: [500,1000] }).toBe(410);
   await expect(page.locator("p.form-error[role=alert]")).toContainText("已停止自动等待");
   // A fresh client reconnect can recover the signed deadline without local state.
