@@ -7,7 +7,7 @@ const baseURL = "http://127.0.0.1:" + consolePort;
 
 function consoleServer(mode: string, port: string, overrides: Record<string, string> = {}): Exclude<NonNullable<PlaywrightTestConfig["webServer"]>, unknown[]> {
   const image = process.env.TRACEFORGE_E2E_IMAGE;
-  const env: Record<string, string> = { HOSTNAME: "127.0.0.1", PORT: port, ...overrides };
+  const env: Record<string, string> = { HOSTNAME: "127.0.0.1", PORT: port, TRACEFORGE_CHAT_MODEL: "", ...overrides };
   let command = "node .next-e2e/standalone/server.js";
   if (image) {
     const hostNetwork = process.platform === "linux";
@@ -17,7 +17,7 @@ function consoleServer(mode: string, port: string, overrides: Record<string, str
       env[key] = url.toString();
     }
     Object.assign(env, { HOSTNAME: hostNetwork ? "127.0.0.1" : "0.0.0.0", PORT: hostNetwork ? port : "3000" });
-    const keys = ["DATABASE_URL", "DEMO_MODE", "ADMIN_EMAIL", "ADMIN_PASSWORD_HASH", "TRACEFORGE_CHAT_GATEWAY_URL", "TRACEFORGE_CHAT_API_KEY", "TRACEFORGE_CHAT_TIMEOUT_MS", "TRACEFORGE_EVAL_GATEWAY_URL", "TRACEFORGE_EVAL_API_KEY", "TRACEFORGE_EVAL_TIMEOUT_MS", "TRACEFORGE_EVAL_TOTAL_TIMEOUT_MS", "TRACEFORGE_EVAL_MAX_CASES", "HOSTNAME", "PORT"];
+    const keys = ["DATABASE_URL", "DEMO_MODE", "ADMIN_EMAIL", "ADMIN_PASSWORD_HASH", "TRACEFORGE_CHAT_GATEWAY_URL", "TRACEFORGE_CHAT_API_KEY", "TRACEFORGE_CHAT_MODEL", "TRACEFORGE_CHAT_TIMEOUT_MS", "TRACEFORGE_EVAL_GATEWAY_URL", "TRACEFORGE_EVAL_API_KEY", "TRACEFORGE_EVAL_TIMEOUT_MS", "TRACEFORGE_EVAL_TOTAL_TIMEOUT_MS", "TRACEFORGE_EVAL_MAX_CASES", "HOSTNAME", "PORT"];
     const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
     command = ["docker run --rm --name", quote(process.env.TRACEFORGE_E2E_CONTAINER + "-" + mode), hostNetwork ? "--network host" : "-p 127.0.0.1:" + port + ":3000", ...keys.map((key) => "-e " + key), quote(image)].join(" ");
   }
@@ -53,6 +53,6 @@ export default defineConfig({
     },
     consoleServer("demo", process.env.TRACEFORGE_E2E_DEMO_PORT!, { DEMO_MODE: "true", ADMIN_EMAIL: "", ADMIN_PASSWORD_HASH: "", TRACEFORGE_CHAT_API_KEY: "e2e-unregistered-key" }),
     consoleServer("no-key", process.env.TRACEFORGE_E2E_NO_KEY_PORT!, { TRACEFORGE_CHAT_API_KEY: "", TRACEFORGE_EVAL_API_KEY: "" }),
-    consoleServer("normal", consolePort),
+    consoleServer("normal", consolePort, { TRACEFORGE_CHAT_MODEL: "mock-mid" }),
   ],
 });

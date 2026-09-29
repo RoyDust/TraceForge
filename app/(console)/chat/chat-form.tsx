@@ -86,9 +86,9 @@ function statusLabel(status: RunSnapshot["status"] | "pending" | null) {
   return "空闲";
 }
 
-export function ChatForm({ models, hasChatApiKey }: { models: ModelOption[]; hasChatApiKey: boolean }) {
+export function ChatForm({ models, hasChatApiKey, defaultModel }: { models: ModelOption[]; hasChatApiKey: boolean; defaultModel?: string }) {
   const preferredModel = models.find((option) => option.modelName === "mock-ok") ?? models[0];
-  const [model, setModel] = useState(preferredModel?.modelName ?? "");
+  const [model, setModel] = useState(defaultModel ?? preferredModel?.modelName ?? "");
   const [stream, setStream] = useState(false);
   const [input, setInput] = useState("Say hello from TraceForge.");
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
@@ -107,8 +107,9 @@ export function ChatForm({ models, hasChatApiKey }: { models: ModelOption[]; has
   const disabledReason = useMemo(() => {
     if (!hasChatApiKey) return "缺少 TRACEFORGE_CHAT_API_KEY";
     if (models.length === 0) return "没有可用模型";
+    if (!selectedModel) return "所选模型不可用，请重新选择。";
     return null;
-  }, [hasChatApiKey, models.length]);
+  }, [hasChatApiKey, models.length, selectedModel]);
   const canSend = !disabledReason && !sending && input.trim().length > 0;
   const status = run?.status ?? (runPending ? "pending" : null);
 
@@ -290,6 +291,7 @@ export function ChatForm({ models, hasChatApiKey }: { models: ModelOption[]; has
           <label>
             模型
             <select value={model} onChange={(event) => setModel(event.target.value)} disabled={models.length === 0 || sending}>
+              {!selectedModel ? <option value={model} disabled>请选择可用模型</option> : null}
               {models.map((option) => (
                 <option key={option.id} value={option.modelName}>
                   {option.providerName} / {option.displayName ?? option.modelName}

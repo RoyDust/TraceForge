@@ -63,6 +63,25 @@ curl http://localhost:8787/readyz
 
 如果已有旧版数据库，请先按 [部署说明](DEPLOYMENT.md) 备份、核对差异并建立迁移基线，不能对有数据的库直接重放完整首次迁移。
 
+## 接入真实 DeepSeek / 兼容中转
+
+在本地 .env 配置上游地址、密钥与模型，复用现有初始化脚本：
+
+~~~dotenv
+DEEPSEEK_BASE_URL="https://your-relay.example/v1"
+DEEPSEEK_API_KEY="<上游网关密钥，仅初始化使用>"
+DEEPSEEK_MODEL="deepseek-v4.1-flash"
+TRACEFORGE_CHAT_MODEL="deepseek-v4.1-flash"
+~~~
+
+~~~bash
+npx tsx scripts/seed-deepseek.ts
+~~~
+
+脚本在同一事务内更新 DeepSeek 配置槽的地址、模型和 AES-256-GCM 密文。上游密钥加密入库后可从 .env 删除；不要把它当作 TRACEFORGE_CHAT_API_KEY，后者仍是本地 Gateway 的项目密钥。改动默认模型后重启 Console，Chat 会默认选择对应模型，Eval 模型列表也可直接选择它。Demo 标识与持久化演示记录不因接入真实模型而自动改变。
+
+未确认中转价格时不创建 ModelPricing，真实调用照常记录 Token 与延迟，Trace 成本保持未知。
+
 ## 验证
 
 ~~~bash

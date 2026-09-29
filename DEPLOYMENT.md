@@ -12,6 +12,8 @@
 | MASTER_ENCRYPTION_KEY | seed 和 Gateway 必填，32 字节 base64 AES-256-GCM Key；换 Key 前必须迁移已有加密 Provider 凭据 |
 | TRACEFORGE_CHAT_GATEWAY_URL | 默认 http://localhost:8787；仅无内嵌凭据、query、fragment 的 HTTP(S) URL |
 | TRACEFORGE_CHAT_API_KEY | Chat 必填，无源码默认值；必须已在数据库 ApiKey 中注册 |
+| TRACEFORGE_CHAT_MODEL | 可选，Chat 默认选择的已启用 modelName；配置不可用时要求重新选择，不自动改用 mock |
+| DEEPSEEK_API_KEY、DEEPSEEK_BASE_URL、DEEPSEEK_MODEL | 仅 seed-deepseek.ts 初始化读取；默认官方 /v1 地址与 deepseek-chat，可指定兼容中转及模型；上游 Key 加密入库，运行时无需明文 |
 | TRACEFORGE_CHAT_TIMEOUT_MS | 默认 30000，范围 1–120000 |
 | TRACEFORGE_EVAL_GATEWAY_URL、TRACEFORGE_EVAL_API_KEY | Eval URL 同上；API Key 必填，无源码默认值 |
 | TRACEFORGE_EVAL_TIMEOUT_MS | 默认 30000，范围 1–120000 |

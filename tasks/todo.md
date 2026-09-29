@@ -1,5 +1,14 @@
 # TraceForge 任务进度
 
+## 真实模型接入（2026-09-29）
+
+- [x] 复用 seed-deepseek.ts，通过环境配置兼容中转地址与 deepseek-v4.1-flash，Provider / Model 在同一事务内更新，密钥 AES-256-GCM 加密入库。
+- [x] Chat 通过 TRACEFORGE_CHAT_MODEL 默认选择真实模型；Compose 同步传递配置，配置不可用时要求重新选择。
+- [x] 本地非流式与浏览器流式调用均成功，Trace 和 Dashboard 可见；上游分别报告 70 / 124 Token，并保留流式事件。未提供中转价格，成本保持未知。
+- [x] lint、typecheck、8 项单测、生产构建及 32 项隔离 Node 浏览器回归通过；既有回归增加运行时默认模型优先于 mock 的断言，Node / Docker 共用。
+
+实际接入地址仅保存于本地环境与数据库，明文上游密钥未写入 .env 或版本控制文件。自动化仍使用隔离数据库和 mock 上游；真实调用使用当前本地项目，Demo 标识与历史数据保持原有配置。
+
 ## Console 整改（2026-09-29）
 
 已恢复完整 UI / Gateway 基线，本轮通过 PR #73 交付恢复基线和 #60 整改。用户此前只能看到最小控制台，是远端 master 未包含完整开发成果。
