@@ -124,7 +124,7 @@ test("expired partial Eval keeps its cost and permits remaining manual review", 
     await expect(summary("平均得分")).toHaveText("1");
     await expect(summary("耗时")).toHaveText("350 ms");
     await expect(page.locator(".page-head .badge")).toHaveText("失败");
-    const wrongForm = page.getByRole("button", { name: "标记通过", exact: true }).locator("..");
+    const wrongForm = page.locator("form").filter({ has: page.getByRole("button", { name: "标记通过", exact: true }) });
     await wrongForm.evaluate((el, value) => el.addEventListener("formdata", (event) => (event as FormDataEvent).formData.set("resultId", value)), foreign.results[0].id);
     await wrongForm.locator('button[type="submit"]').click();
     await expect(wrongForm.getByRole("alert")).toContainText("结果不属于此评测运行");
