@@ -183,27 +183,34 @@ async function callGateway(evalCase: EvalCaseLike, prompt: PromptVersionLike, mo
   const output = choices.map((choice) => asObject(asObject(choice).message as Prisma.JsonValue).content).filter((value): value is string => typeof value === "string").join("");
   if (!choices.length || output.length > 128000) throw new InputError("网关响应无效或过大。");
   const usage = asObject(body.usage as Prisma.JsonValue);
-  return { output, promptTokens: typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : null, completionTokens: typeof usage.completion_tokens === "number" ? usage.completion_tokens : null };
+  return { output, modelConfigId: response.headers.get("x-traceforge-model-config-id"), promptTokens: typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : null, completionTokens: typeof usage.completion_tokens === "number" ? usage.completion_tokens : null };
 }
 
 export async function expireEvalRuns(db: PrismaClient) {
   await db.$transaction(async (tx) => {
-    const expired = await tx.evalRun.findMany({ where: { status: "running", OR: [{ deadlineAt: { lte: new Date() } }, { deadlineAt: null, createdAt: { lt: new Date(Date.now() - 300_000) } }] }, select: { id: true } });
+    const expired = await tx.evalRun.findMany({ where: { status: "running", OR: [{ deadlineAt: { lte: new Date() } }, { deadlineAt: null, createdAt: { lt: new Date(Date.now() - 300_000) } }] }, select: { id: true }, orderBy: { id: "asc" } });
     const ids = expired.map((run) => run.id);
     if (!ids.length) return;
-    await tx.evalRun.updateMany({ where: { id: { in: ids }, status: "running" }, data: { status: "failed" } });
-    await tx.evalResult.updateMany({ where: { evalRunId: { in: ids }, status: "pending" }, data: { status: "error", pass: false, judgeReason: "执行超时或进程中断；不会自动重试。" } });
+    for (const id of ids) {
+      await tx.$queryRawUnsafe("SELECT id FROM eval_run WHERE id = $1::uuid FOR UPDATE", id);
+      const changed = await tx.evalRun.updateMany({ where: { id, status: "running" }, data: { status: "failed" } });
+      if (!changed.count) continue;
+      await tx.evalResult.updateMany({ where: { evalRunId: id, status: "pending" }, data: { status: "error", pass: false, judgeReason: "执行超时或进程中断；不会自动重试。" } });
+      await refreshEvalRunSummary(tx, id);
+    }
   });
 }
 
 export async function refreshEvalRunSummary(db: Prisma.TransactionClient, evalRunId: string) {
+  await db.$queryRawUnsafe("SELECT id FROM eval_run WHERE id = $1::uuid FOR UPDATE", evalRunId);
+  const run = await db.evalRun.findUniqueOrThrow({ where: { id: evalRunId } });
   const results = await db.evalResult.findMany({ where: { evalRunId } });
   const scores = results.flatMap((result) => result.score === null ? [] : [result.score]);
   const averageScore = scores.length ? scores.reduce((sum, score) => sum.plus(score), new Prisma.Decimal(0)).div(scores.length) : null;
   const costs = results.flatMap((result) => result.cost === null ? [] : [result.cost]);
   const totalCost = costs.length ? costs.reduce((sum, cost) => sum.plus(cost), new Prisma.Decimal(0)) : null;
-  const status = results.some((r) => r.status === "pending") ? "running" : results.some((r) => r.status === "error") ? "failed" : results.some((r) => r.status === "needs_review") ? "needs_review" : "completed";
-  await db.evalRun.updateMany({ where: { id: evalRunId, status: { not: "failed" } }, data: { status, averageScore, totalCost, durationMs: results.reduce((sum, r) => sum + (r.durationMs ?? 0), 0) } });
+  const status = run.status === "failed" ? "failed" : results.some((r) => r.status === "pending") ? "running" : results.some((r) => r.status === "error") ? "failed" : results.some((r) => r.status === "needs_review") ? "needs_review" : "completed";
+  await db.evalRun.updateMany({ where: { id: evalRunId }, data: { status, averageScore, totalCost, durationMs: results.reduce((sum, r) => sum + (r.durationMs ?? 0), 0) } });
 }
 
 export async function runEvalDataset(db: PrismaClient, request: EvalRunRequest) {
@@ -225,7 +232,6 @@ export async function runEvalDataset(db: PrismaClient, request: EvalRunRequest) 
   if (promptVersion.prompt.projectId !== dataset.projectId) throw new InputError("提示词与数据集不属于同一项目。");
   if (modelConfig.status !== "active" || modelConfig.provider.status !== "active") throw new InputError("模型或供应商已停用。");
   if (!dataset.cases.length || dataset.cases.length > limits.maxCases) throw new InputError("评测样本数必须为 1–" + limits.maxCases + "。");
-  const pricing = await db.modelPricing.findFirst({ where: { model: modelConfig.modelName, provider: modelConfig.provider.name, effectiveFrom: { lte: new Date() } }, orderBy: { effectiveFrom: "desc" } });
   const deadline = Date.now() + limits.totalTimeoutMs;
   try {
     await db.evalRun.create({ data: { id, datasetId: dataset.id, promptVersionId: promptVersion.id, modelConfigId: modelConfig.id, status: "running", deadlineAt: new Date(deadline), results: { create: dataset.cases.map((c) => ({ evalCaseId: c.id, assertionType: c.assertionType, status: "pending" })) } } });
@@ -243,9 +249,11 @@ export async function runEvalDataset(db: PrismaClient, request: EvalRunRequest) 
     let data: Prisma.EvalResultUpdateManyMutationInput;
     try {
       const mocked = demoMode() ? mockOutput(evalCase, promptVersion) : null;
-      const execution = mocked === null ? await callGateway(evalCase, promptVersion, modelConfig, config, deadline) : { output: mocked, promptTokens: null, completionTokens: null };
+      const execution = mocked === null ? await callGateway(evalCase, promptVersion, modelConfig, config, deadline) : { output: mocked, modelConfigId: null, promptTokens: null, completionTokens: null };
       if (Date.now() >= deadline) break;
       const outcome = evaluateAssertion(evalCase, execution.output);
+      const billedModel = execution.modelConfigId ? await db.modelConfig.findUnique({ where: { id: execution.modelConfigId }, include: { provider: true } }) : null;
+      const pricing = billedModel ? await db.modelPricing.findFirst({ where: { model: billedModel.modelName, provider: billedModel.provider.name, effectiveFrom: { lte: new Date(started) } }, orderBy: { effectiveFrom: "desc" } }) : null;
       const cost = mocked !== null ? new Prisma.Decimal(0) : pricing && execution.promptTokens !== null && execution.completionTokens !== null ? pricing.inputPrice.mul(execution.promptTokens).plus(pricing.outputPrice.mul(execution.completionTokens)) : null;
       data = { output: execution.output, pass: outcome.pass, score: outcome.score, judgeReason: outcome.judgeReason, cost, durationMs: Date.now() - started, status: outcome.status };
     } catch {
@@ -255,6 +263,7 @@ export async function runEvalDataset(db: PrismaClient, request: EvalRunRequest) 
     await db.evalResult.updateMany({ where: { evalRunId: id, evalCaseId: evalCase.id, status: "pending", evalRun: { status: "running", deadlineAt: { gt: new Date() } } }, data });
   }
   await db.$transaction(async (tx) => {
+    await tx.$queryRawUnsafe("SELECT id FROM eval_run WHERE id = $1::uuid FOR UPDATE", id);
     await tx.evalResult.updateMany({ where: { evalRunId: id, status: "pending" }, data: { status: "error", pass: false, judgeReason: "评测总预算已耗尽或执行中断；未自动重试。" } });
     await refreshEvalRunSummary(tx, id);
   });

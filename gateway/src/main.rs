@@ -798,6 +798,7 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
                     .status(status)
                     .header(header::CONTENT_TYPE, content_type)
                     .header(TRACE_RUN_ID_HEADER, run_id.to_string())
+                    .header("x-traceforge-model-config-id", hop.id.to_string())
                     .body(Body::from(resp_body))
                     .unwrap();
             }
@@ -810,7 +811,7 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
                 if can_fallback {
                     attempt_events.push(event(
                         "fallback_triggered",
-                        json!({"from": hop.model_name, "reason": last_code}),
+                        json!({"from": hop.model_name, "to": chain[idx + 1].model_name, "reason": last_code}),
                     ));
                 }
             }
@@ -822,7 +823,7 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
                 if can_fallback {
                     attempt_events.push(event(
                         "fallback_triggered",
-                        json!({"from": hop.model_name, "reason": last_code}),
+                        json!({"from": hop.model_name, "to": chain[idx + 1].model_name, "reason": last_code}),
                     ));
                 }
             }
@@ -834,7 +835,7 @@ async fn chat_completions(State(st): State<AppState>, headers: HeaderMap, body: 
                 if can_fallback {
                     attempt_events.push(event(
                         "fallback_triggered",
-                        json!({"from": hop.model_name, "reason": last_code}),
+                        json!({"from": hop.model_name, "to": chain[idx + 1].model_name, "reason": last_code}),
                     ));
                 }
             }

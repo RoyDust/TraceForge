@@ -1,52 +1,25 @@
-# 下一步计划 · 本地原生跑通（无 Docker）
+# TraceForge 任务进度
 
-## Next.js 16 规范整改（逐项实施中）
+## Console 整改（2026-09-29）
 
-> 已确认约束：功能完整优先；Redis、持久化任务队列和独立 Worker 后置；`DEMO_MODE` 可在任何部署环境显式启用。
+已恢复完整 UI / Gateway 基线，工作分支 codex/complete-console-remediation。用户此前只能看到最小控制台，是远端 master 未包含完整开发成果；本轮交付同时包含恢复基线和 #60 整改。
 
-### P0 · 演示模式与权限边界
+- [x] #61：Next 16.3.6、lint、typegen、真实进程浏览器基线。
+- [x] #62–#63：显式 Demo、禁止默认生产凭据、持久标识、server-only DAL、读写独立授权、共享 Console 外壳。
+- [x] #64–#66：输入与归属校验、事务和幂等、上海时间、loading/可恢复错误/not-found。
+- [x] #67–#68：持久化 demo、完整数据库聚合、UsageDaily 对账、有限明细、真实治理证据。
+- [x] #69–#70：after 托管 Chat、有截止 pending、同步 Eval 预算与幂等、失败汇总及人工复核。
+- [x] #71：standalone 非 root 镜像、实际环境校验、Node/Docker 共用浏览器验收、启动/迁移/TLS 文档。
+- [ ] #72：从最终干净提交跑完整 Node/Docker 回归、推送可拉取分支并完成 CI / 主线交付。
 
-- [ ] 将默认密码预填限制为显式 `DEMO_MODE`，并在界面持续显示演示模式标识。
-- [ ] 演示数据只允许通过 seed 写入；关闭演示模式后禁止预填凭据和静默生成假指标。
-- [ ] 保持单管理员模式，建立 `server-only` DAL，并在所有数据读取入口验证 Session。
-- [ ] Console 全站设置 `noindex, nofollow`。
+Standards / Spec 双轴审查的发现均已逐项修复；对应回归及 36 条用户故事映射见 docs/testing.md。历史记录保留如下，其中“master 缺失代码”“#61 无法开工”等均为 2026-09-28 的审查快照，不代表本轮最终状态。
 
-### P1 · 请求生命周期与数据真实性
+### 明确后置 / 外部前提
 
-- [ ] Chat 后台派发改用 Next.js `after()` 托管，不引入 Redis 队列。
-- [ ] Eval 保持同步演示执行器，增加样本上限、超时和重复提交保护。
-- [ ] 删除源码中的 Eval 默认 API Key；缺少配置时明确失败。
-- [ ] Dashboard 保留全部指标、趋势、模型拆分和治理功能，改用数据库聚合、`UsageDaily` 与有限明细查询。
-- [ ] 数据库故障显示真实错误，不使用模拟数据掩盖。
-
-### P1 · App Router 与数据一致性
-
-- [ ] 将受保护页面整理到 `(console)` Route Group，共用单一 Layout。
-- [ ] 补充 `loading.tsx`、`error.tsx`、`global-error.tsx` 和 `not-found.tsx`。
-- [ ] 详情资源不存在时使用标准 `notFound()` 语义。
-- [ ] Server Actions 返回可展示业务错误，并校验父子记录关联。
-- [ ] Prompt/Eval 多步写入使用事务和幂等保护。
-- [ ] 数据库存储与 API/导出使用 UTC，Console 筛选和展示统一使用 `Asia/Shanghai`。
-
-### P2 · 工程与部署闸门
-
-- [x] 增加 ESLint、`next typegen + tsc`、build、Prisma 校验和核心 Playwright 测试脚本（#61）。
-- [ ] CI 覆盖登录、权限跳转、Chat 派发和核心页面访问。
-  - #61 已增加登录、受保护路由、退出、侧栏持久化与 mock Gateway HTTP 基线；Chat 派发与完整页面覆盖由后续 ticket 完成。
-- [ ] 统一 `.env.example`、Compose、CI 和部署文档中的 Chat/Eval 环境变量契约。
-- [ ] Console Docker 镜像改用 Next.js standalone，并使用非 root 用户运行。
-- [x] 经确认将 Next.js 与 eslint-config-next 固定为 `16.3.6`；处理兼容依赖更新，不运行 `npm audit fix --force`（#61）。
-- [ ] Redis 缓存、持久化任务队列和独立 Worker 留待后续单独决策。
-
-### Decision Review
-
-- #61：新增独立验证命令与隔离的真实 Next.js / PostgreSQL / mock Gateway 测试环境；使用方式见 `docs/testing.md`。
-- #61：本地 `npm ci`、Lint、路由类型生成与 TypeScript、Prisma 校验、生产构建、Rust 测试及 SQLx examples 编译检查通过；GitHub 执行证据记录在 issue 完成评论中。
-- #61：5 个 Chromium smoke tests 通过，成功和失败运行均清理独立 schema。规范与验收双轴审查发现的 Docker 启动中断清理问题已修复并复核。
-- #61：审计剩余 4 项 high、0 critical；Prisma 传递依赖风险与非强制修复边界见 `docs/verification/issue-61-dependency-audit.md`。
-- 已确认 Dashboard 不删减功能，只更换为可扩展的数据查询实现。
-- 已确认正式部署也允许开启 `DEMO_MODE`，但必须显式启用并展示演示标识。
-- 已确认当前阶段不增加 Redis 基础设施。
+- Redis、分布式限流、持久化队列、独立 Worker、多用户权限、Chat 会话持久化不在 #60 范围。
+- 公网服务器、域名、TLS 证书、真实 Provider 密钥需部署方提供；当前验收只使用 mock 上游。
+- Prisma 工具链仍有 4 个 high 包节点告警，已记录评估；不通过强制主版本回退处理。
+- 现有 Gateway 镜像仍在启动时编译；离线 SQLx metadata 与精简 Rust runtime 镜像另行处理。
 
 ## Chat 与侧边栏交互修复（2026-07-14）
 

@@ -16,7 +16,9 @@
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
     "test:unit": "node --import tsx --test tests/unit/*.test.ts",
-    "usage:aggregate": "node --import tsx scripts/aggregate-usage-daily.mjs"
+    "usage:aggregate": "node --import tsx scripts/aggregate-usage-daily.mjs",
+    "test:docker": "node scripts/run-e2e.mjs --docker",
+    "deploy:check": "node --import tsx scripts/verify-deploy-config.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

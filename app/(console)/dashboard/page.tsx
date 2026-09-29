@@ -192,7 +192,7 @@ function providerName(provider: string, model: string) {
 
 export default async function DashboardPage({ searchParams }: { searchParams: SearchParams }) {
   const rawParams = await searchParams;
-  const filters = { projectId: one(rawParams.projectId)?.trim(), from: one(rawParams.from)?.trim() || defaultFrom(), to: one(rawParams.to)?.trim() || shanghaiDay(new Date()) };
+  const filters = { projectId: one(rawParams.projectId)?.trim() || undefined, from: one(rawParams.from)?.trim() || defaultFrom(), to: one(rawParams.to)?.trim() || shanghaiDay(new Date()) };
   const data = await getDashboardData(filters);
   const { metrics, runs, projects, trends: trendRows } = data;
   const modelRows = data.models.map((row) => ({ ...row, failureRate: ratio(row.failureCount, row.requestCount) }));
@@ -212,6 +212,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const maxChartRequests = Math.max(1, ...chartRows.map((row) => row.requests));
   const providerRows = modelRows.map((row) => ({ label: providerName(row.provider, row.model), successRate: 100 * (1 - (row.failureRate ?? 0)), p95: row.p95LatencyMs, errors: row.failureCount }));
   const rateRows = modelRows.map((row) => ({ label: providerName(row.provider, row.model), failures: row.limitCount }));
+  if (governanceData.gatewayLimitCount) rateRows.push({ label: "网关拒绝（未达模型）", failures: governanceData.gatewayLimitCount });
   const streamReasons = data.reasons.map((row) => [row.label, row.count] as const);
 
   return (
@@ -222,6 +223,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           <p>集中查看追踪运行、供应商健康、限流、成本和 Token 压力。</p>
         </div>
         <form className="tf-title-filter" method="get">
+          <input type="hidden" name="from" value={filters.from} />
+          <input type="hidden" name="to" value={filters.to} />
           <NativeSelect name="projectId" size="sm" defaultValue={filters.projectId ?? ""} aria-label="项目">
             <NativeSelectOption value="">全部项目</NativeSelectOption>
             {projects.map((project) => (

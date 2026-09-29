@@ -8,7 +8,7 @@ concurrency:
 
 jobs:
   schema-sqlx-sync:
-    name: Schema, Console and browser baseline
+    name: Schema, Console and browser acceptance
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -29,6 +29,7 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://traceforge:traceforge@localhost:5432/traceforge
+      TEST_DATABASE_URL: postgresql://traceforge:traceforge@localhost:5432/traceforge
       ADMIN_EMAIL: smoke@example.com
       ADMIN_PASSWORD_HASH: plain:e2e-local-password
       NEXT_TELEMETRY_DISABLED: 1
@@ -36,14 +37,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 控制面: 用 schema.prisma (单一事实源) 把表建到 DB。正式部署改用 `prisma migrate deploy`。
+      # 在干净 PostgreSQL 上应用同一套已提交迁移。
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm ci
       - run: npx prisma validate
       - run: npm run db:generate
-      - run: npx prisma db push
+      - run: npm run db:deploy
+      - run: npm run test:unit
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 // Shared runtime contract. Read on demand so deployments can supply runtime values.
 export function demoMode() {
   const value = process.env.DEMO_MODE ?? "false";
@@ -11,7 +13,11 @@ export function adminConfig() {
   const passwordHash = process.env.ADMIN_PASSWORD_HASH?.trim() || (demo ? "plain:traceforge-demo" : "");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("请配置合法的 ADMIN_EMAIL。");
   if (!/^(plain:.+|sha256:[a-f0-9]{64}|[a-f0-9]{64})$/i.test(passwordHash)) throw new Error("请配置合法的 ADMIN_PASSWORD_HASH。");
-  if (!demo && passwordHash === "plain:traceforge-demo") throw new Error("关闭 DEMO_MODE 后必须更换演示密码。");
+  const forbidden = ["traceforge-demo", "change-me"].some((password) => {
+    const digest = createHash("sha256").update(password).digest("hex");
+    return passwordHash === "plain:" + password || passwordHash.toLowerCase().replace(/^sha256:/, "") === digest;
+  });
+  if (!demo && forbidden) throw new Error("关闭 DEMO_MODE 后必须更换演示或占位密码。");
   return { email, passwordHash };
 }
 

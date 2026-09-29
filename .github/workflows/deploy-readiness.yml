@@ -8,6 +8,7 @@ on:
 jobs:
   package-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -26,6 +27,10 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://traceforge:traceforge@localhost:5432/traceforge
+      TEST_DATABASE_URL: postgresql://traceforge:traceforge@localhost:5432/traceforge
+      DEMO_MODE: "false"
+      TRACEFORGE_CHAT_GATEWAY_URL: http://localhost:8787
+      TRACEFORGE_CHAT_API_KEY: test-only-injected-chat-key
       ADMIN_EMAIL: admin@example.com
       ADMIN_PASSWORD_HASH: plain:stage3-local-admin
       MASTER_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
@@ -38,7 +43,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: npx prisma db push
+      - run: npm run db:deploy
       - run: npx prisma validate
       - run: npm run db:generate
       - run: npm run build
@@ -48,4 +53,14 @@ jobs:
           workspaces: gateway
       - working-directory: gateway
         run: cargo test && cargo check --examples
-      - run: node scripts/verify-deploy-config.mjs
+      - run: npm run deploy:check
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:docker
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: docker-verification-evidence
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

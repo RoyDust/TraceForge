@@ -9,11 +9,12 @@ export type MetricRow = {
   averageLatencyMs: number | null; p95LatencyMs: number | null;
 };
 type ModelRow = Omit<MetricRow, "date" | "successCount"> & { provider: string; model: string; limitCount: number };
-type GovernanceRow = { fallbackTriggered: number; fallbackFailed: number; streamErrors: number; authCount: number; slowestSpan: number | null };
+type GovernanceRow = { fallbackTriggered: number; fallbackFailed: number; streamErrors: number; authCount: number; gatewayLimitCount: number; slowestSpan: number | null };
 type CountRow = { label: string; count: number };
 
 export async function getDashboardData(filters: { from: string; to: string; projectId?: string }) {
   const db = await getConsoleDb();
+  filters = { ...filters, projectId: filters.projectId?.trim() || undefined };
   if (filters.projectId && !isUuid(filters.projectId)) throw new InputError("项目 ID 无效。");
   const range = dayRange(filters.from, filters.to);
   const values = [range.gte!, range.lt!, filters.projectId ?? null];
@@ -36,7 +37,9 @@ export async function getDashboardData(filters: { from: string; to: string; proj
     'count(DISTINCT run_id) FILTER (WHERE error_code IN (\'rate_limited\',\'concurrency_limited\'))::int AS "limitCount" FROM s GROUP BY provider, model ORDER BY SUM(cost) DESC NULLS LAST';
   const governanceQuery = base + ' SELECT (SELECT count(*)::int FROM e WHERE type=\'fallback_triggered\') AS "fallbackTriggered", (SELECT count(*)::int FROM e WHERE type=\'fallback_failed\') AS "fallbackFailed", ' +
     '(SELECT count(*)::int FROM r WHERE error_code=\'stream_interrupted\' OR EXISTS (SELECT 1 FROM s WHERE s.run_id=r.id AND s.error_code=\'stream_interrupted\')) AS "streamErrors", ' +
-    '(SELECT count(*)::int FROM r WHERE error_code IN (\'invalid_api_key\',\'revoked_api_key\')) AS "authCount", (SELECT max(latency_ms)::int FROM s) AS "slowestSpan"';
+    '(SELECT count(*)::int FROM r WHERE error_code IN (\'invalid_api_key\',\'revoked_api_key\')) AS "authCount", ' +
+    '(SELECT count(*)::int FROM r WHERE error_code IN (\'rate_limited\',\'concurrency_limited\') AND NOT EXISTS (SELECT 1 FROM s WHERE s.run_id=r.id AND s.error_code IN (\'rate_limited\',\'concurrency_limited\'))) AS "gatewayLimitCount", ' +
+    '(SELECT max(latency_ms)::int FROM s) AS "slowestSpan"';
   const fallbackQuery = base + ' SELECT COALESCE(payload->>\'from_model\',payload->>\'from\',\'未知起点\') || \' → \' || COALESCE(payload->>\'to_model\',payload->>\'to\',\'未知终点\') AS label, count(*)::int AS count FROM e WHERE type=\'fallback_triggered\' GROUP BY label ORDER BY count DESC LIMIT 20';
   const reasonsQuery = base + ' SELECT COALESCE(payload->>\'error_code\',payload->>\'reason\',type::text) AS label, count(*)::int AS count FROM e WHERE type IN (\'stream_error\',\'stream_cancelled\') GROUP BY label ORDER BY count DESC LIMIT 20';
   const [facts, models, governance, fallback, reasons, runs, projects, usage] = await db.$transaction([

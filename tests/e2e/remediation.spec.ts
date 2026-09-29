@@ -47,7 +47,9 @@ test("every protected entry rejects anonymous and expired sessions", async ({ pa
   expect((await request.post("/chat/dispatch", { data: {} })).status()).toBe(401);
   expect((await request.get("/chat/runs/" + randomUUID())).status()).toBe(401);
   const payload = Buffer.from(JSON.stringify({ email: "smoke@example.com", exp: Date.now() - 1000 })).toString("base64url");
-  const signature = createHmac("sha256", "plain:e2e-local-password:" + process.env.DATABASE_URL).update(payload).digest("base64url");
+  const databaseURL = new URL(process.env.DATABASE_URL!);
+  if (process.env.TRACEFORGE_E2E_IMAGE && process.platform !== "linux" && ["127.0.0.1", "localhost"].includes(databaseURL.hostname)) databaseURL.hostname = "host.docker.internal";
+  const signature = createHmac("sha256", "plain:e2e-local-password:" + databaseURL.toString()).update(payload).digest("base64url");
   await context.addCookies([{ name: "traceforge_admin", value: payload + "." + signature, url: "http://127.0.0.1:" + process.env.TRACEFORGE_E2E_PORT }]);
   await page.goto("/dashboard"); await expect(page).toHaveURL(/\/login$/);
 });
@@ -194,4 +196,34 @@ test("same Prompt Version submission from two tabs allocates only one version", 
     await expect(tab).toHaveURL(new RegExp("/prompts/" + prompt + "\\?compare=3$"));
   }));
   await second.close();
+});
+
+
+test("Chat browser sends successive messages and opens the matching Trace", async ({ page }) => {
+  await login(page);
+  await page.goto("/chat");
+  await page.getByLabel("模型", { exact: true }).selectOption("mock-ok");
+  await page.getByLabel("流式输出", { exact: true }).uncheck();
+  let previous: string | null = null;
+  for (const content of ["first UI message", "second UI message"]) {
+    await page.getByLabel("消息", { exact: true }).fill(content);
+    await page.getByRole("button", { name: "发送消息", exact: true }).click();
+    await expect(page.locator(".chat-bubble.assistant").last()).toContainText("hello from mock");
+    const href = await page.getByRole("link", { name: "打开追踪运行" }).getAttribute("href");
+    expect(href).not.toBe(previous);
+    previous = href;
+  }
+  await page.getByRole("link", { name: "打开追踪运行" }).click();
+  await expect(page.getByRole("heading", { name: "调用树", exact: true })).toBeVisible();
+  await expect(page.getByText("成功", { exact: true }).first()).toBeVisible();
+});
+
+test("standalone static assets load and the Dashboard renders completely", async ({ page }, testInfo) => {
+  await login(page);
+  await page.goto("/dashboard");
+  await expect(page.getByRole("heading", { name: "治理总览", exact: true })).toBeVisible();
+  const assets = await page.locator('link[rel="stylesheet"], script[src]').evaluateAll((elements) => elements.map((e) => e.getAttribute("href") ?? e.getAttribute("src")).filter((v): v is string => Boolean(v?.startsWith("/_next/static/"))));
+  expect(assets.length).toBeGreaterThan(0);
+  for (const asset of assets) expect((await page.request.get(asset)).status()).toBe(200);
+  await testInfo.attach("dashboard-render", { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
 });

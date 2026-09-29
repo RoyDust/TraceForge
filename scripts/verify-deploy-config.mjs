@@ -1,32 +1,27 @@
-import { readFileSync } from "node:fs";
+// Validate actual runtime values; never print secrets.
+import "dotenv/config";
+import { adminConfig, demoMode, gatewayConfig, evalLimits } from "../lib/env.ts";
 
-const checks = [
-  ["docker-compose.yml", ["postgres:", "console:", "gateway:", "mock-upstream:", "3000:3000", "8787:8787", "8799:8799", "TRACEFORGE_EVAL_GATEWAY_URL", "TRACEFORGE_EVAL_API_KEY"]],
-  ["Dockerfile.console", ["npm ci", "npm run db:generate", "npm run build", "EXPOSE 3000"]],
-  ["gateway/Dockerfile", ["cargo", "run", "--release", "traceforge-gateway", "EXPOSE 8787"]],
-  ["deploy/nginx/traceforge.conf", ["proxy_pass http://console:3000", "proxy_pass http://gateway:8787", "proxy_buffering off"]],
-  [".github/workflows/deploy-readiness.yml", ["npm run build", "npx prisma validate", "cargo test", "cargo check --examples", "node scripts/verify-deploy-config.mjs"]],
-  ["DEPLOYMENT.md", ["DATABASE_URL", "MASTER_ENCRYPTION_KEY", "ADMIN_EMAIL", "TRACEFORGE_EVAL_GATEWAY_URL", "docker compose up --build"]],
-];
-
+const checks = {
+  "Demo Mode / administrator": () => { demoMode(); adminConfig(); },
+  "Chat gateway": () => gatewayConfig("CHAT"),
+  "Eval gateway / limits": () => { gatewayConfig("EVAL"); evalLimits(); },
+  "PostgreSQL": () => {
+    let url;
+    try { url = new URL(process.env.DATABASE_URL); } catch { throw new Error("DATABASE_URL 必须为 PostgreSQL 地址。"); }
+    if (!["postgres:", "postgresql:"].includes(url.protocol) || !url.hostname || url.pathname.length < 2) throw new Error("DATABASE_URL 必须包含 PostgreSQL 主机和数据库名。");
+    const schema = url.searchParams.get("schema");
+    if (schema && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(schema)) throw new Error("DATABASE_URL schema 无效。");
+  },
+  "Provider encryption key": () => {
+    const key = process.env.MASTER_ENCRYPTION_KEY?.trim();
+    if (!key || Buffer.from(key, "base64").length !== 32 || Buffer.from(key, "base64").toString("base64") !== key) throw new Error("MASTER_ENCRYPTION_KEY 必须为 32 字节 base64。");
+  },
+};
 let failed = false;
-for (const [file, needles] of checks) {
-  let text = "";
-  try {
-    text = readFileSync(file, "utf8");
-  } catch (error) {
-    console.error(`missing ${file}: ${error}`);
-    failed = true;
-    continue;
-  }
-  const missing = needles.filter((needle) => !text.includes(needle));
-  if (missing.length > 0) {
-    console.error(`${file} missing: ${missing.join(", ")}`);
-    failed = true;
-  } else {
-    console.log(`ok ${file}`);
-  }
+for (const [name, check] of Object.entries(checks)) {
+  try { check(); console.log("ok " + name); }
+  catch (error) { failed = true; console.error(name + ": " + error.message); }
 }
-
-if (failed) process.exit(1);
-console.log("Deployment readiness config looks complete.");
+if (failed) process.exitCode = 1;
+else console.log("Runtime deployment configuration is valid; network readiness is verified separately.");

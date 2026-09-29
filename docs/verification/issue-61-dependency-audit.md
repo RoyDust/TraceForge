@@ -42,3 +42,8 @@ ESLint 使用与当前 Next 配置兼容的 9.39.5；安装器提示该分支已
 功能闸门独立执行 lint、typecheck、build、Prisma 校验、Rust 编译与 Playwright。依赖审计使用独立步骤输出 dependency-audit.json，即使有告警也保存为 verification-evidence artifact，保留 7 天。审计步骤不是安全无漏洞的通过承诺。
 
 后续处理：关注 Prisma 对 deepmerge-ts / mysql2 的依赖更新，以及 ESLint 受支持版本的兼容性。修改锁文件后重新执行本基线。#61 的验收是提供可评估审计与验证命令，不是消除所有上游告警。
+
+
+## #72 复核（2026-09-29）
+
+相同锁文件重新执行 npm audit --json，仍为 0 critical、4 high、0 moderate、4 total；建议修复仍指向 Prisma 6.19.3 的跨主版本回退。未执行强制修复。Console 交付采用 standalone；不以运行镜像裁剪替代对上游工具链风险的跟进。

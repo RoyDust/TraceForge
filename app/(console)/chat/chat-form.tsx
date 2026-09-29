@@ -120,7 +120,9 @@ export function ChatForm({ models, hasChatApiKey }: { models: ModelOption[]; has
     if (!currentRunId || terminal(status) || !sending) return;
 
     let cancelled = false;
+    const targetMessageId = assistantMessageId.current;
     async function tick() {
+      if (cancelled || targetMessageId !== assistantMessageId.current) return;
       if (deadline && Date.now() >= deadline) {
         setError("未确认派发或运行尚未完成，已停止等待。请核对运行 ID 后再决定是否重新发送。");
         setRunPending(false); setSending(false); return;
@@ -128,7 +130,7 @@ export function ChatForm({ models, hasChatApiKey }: { models: ModelOption[]; has
       try {
         const response = await fetch("/chat/runs/" + currentRunId + "?pending=" + encodeURIComponent(receipt), { cache: "no-store", signal: AbortSignal.timeout(5000) });
         const body = (await response.json().catch(() => ({}))) as RunResponse;
-        if (cancelled) return;
+        if (cancelled || targetMessageId !== assistantMessageId.current) return;
         if (!response.ok) {
           setSending(false);
           setRunPending(false);
@@ -184,6 +186,10 @@ export function ChatForm({ models, hasChatApiKey }: { models: ModelOption[]; has
     ]);
     setInput("");
     setRun(null);
+    setCurrentRunId(null);
+    setCurrentTraceUrl(null);
+    setDeadline(null);
+    setReceipt("");
     setRunPending(true);
     setError(null);
     setSending(true);

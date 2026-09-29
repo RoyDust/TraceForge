@@ -51,7 +51,7 @@ export async function reviewEvalResultAction(form: FormData) {
       await tx.$queryRawUnsafe("SELECT id FROM eval_run WHERE id = $1::uuid FOR UPDATE", evalRunId);
       const result = await tx.evalResult.findFirst({ where: { id: resultId, evalRunId }, include: { evalRun: true } });
       if (!result) throw new InputError("结果不属于此评测运行。");
-      if (result.evalRun.status === "running" || result.evalRun.status === "failed" || result.assertionType !== "manual_review") throw new InputError("当前结果不能人工复核。");
+      if (result.evalRun.status === "running" || !["needs_review", "passed", "failed"].includes(result.status) || result.assertionType !== "manual_review") throw new InputError("当前结果不能人工复核。");
       await tx.evalResult.update({ where: { id: resultId }, data: { pass, score: pass ? "1.000" : "0.000", status: pass ? "passed" : "failed", judgeReason: pass ? "人工复核通过。" : "人工复核未通过。" } });
       await refreshEvalRunSummary(tx, evalRunId);
     });
