@@ -9,7 +9,7 @@ export default defineConfig([
   { files: ["**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}"], languageOptions: { parser, parserOptions: { ecmaFeatures: { jsx: true } } } },
   globalIgnores([
     ".next/**",
-    ".next-e2e/**",
+    ".next-*/**",
     "out/**",
     "gateway/**",
     "prisma/generated/**",

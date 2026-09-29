@@ -128,7 +128,7 @@ Chat after() 不跨进程重启恢复；未确认派发在调用超时加 10 秒
 ~~~bash
 docker compose --env-file /private/production.env -f deploy/compose.production.yml config --quiet
 docker compose --env-file /private/production.env -f deploy/compose.production.yml up -d postgres
-docker compose --env-file /private/production.env -f deploy/compose.production.yml build
+docker compose --env-file /private/production.env -f deploy/compose.production.yml --profile tools build
 docker compose --env-file /private/production.env -f deploy/compose.production.yml run --rm migrate
 docker compose --env-file /private/production.env -f deploy/compose.production.yml run --rm migrate node --import tsx scripts/seed-apikey.ts
 docker compose --env-file /private/production.env -f deploy/compose.production.yml run --rm migrate node --import tsx scripts/seed-deepseek.ts
