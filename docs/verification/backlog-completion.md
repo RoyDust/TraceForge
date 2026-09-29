@@ -27,3 +27,8 @@ Agent Trace API、最小四方法 Node SDK、写作 Agent、真实 LLM Judge、�
 
 ## 尚缺外部输入
 仅 #80 的实际中转费率无法从公开来源确认，保留 needs-info。官方缓存/峰谷价只是参考。Redis、分布式限流、持久队列、独立 Worker、多用户与 Chat 历史仍按既有计划后置。
+
+## CI 安装来源修复
+首次远端 CI 在 npm ci 阶段退出。锁文件中新升级的 32 个包指向本地公司内网源，公网 runner 无法访问。在 Node 22 / npm 10 的隔离容器中阻断该内网域名，复现同一 Exit handler never called 错误；将这 32 个 tarball 地址改为 registry.npmjs.org 后，同一命令成功安装 1,060 个包。所有版本、integrity 哈希和依赖关系完全不变。项目 .npmrc 固定公网源，避免后续更新再次写入内网地址。
+
+交付 PR：https://github.com/RoyDust/TraceForge/pull/81 。最终提交的 CI 结果与主线合并状态以该 PR 的 GitHub 检查/合并记录为准，不将首次失败或旧提交检查计作最终通过。

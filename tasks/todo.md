@@ -4,10 +4,10 @@
 
 - [x] #76：Agent 采集接口、双 scope、同项目父子树、四方法 Node SDK 与真实写作 Agent 示例已经实现。
 - [x] #77：LLM Judge 改为真实 Gateway 调用，严格评分 JSON、预算与两次调用费用；正常/无效 JSON/超时浏览器用例通过。
-- [x] #79：Prisma 传递依赖修复、ESLint 10 兼容升级；npm audit 0 告警，lint/typecheck/8 项单测通过。
+- [x] #79：Prisma 传递依赖修复、ESLint 10 兼容升级；npm audit 0 告警，lint/typecheck/9 项单测通过。
 - [x] #78：SQLx 离线 metadata、预编译非 root 镜像、HTTPS 和生产初始化完成，40 项完整容器验收通过。
 - [x] 真实中转 Agent/Judge 验收与双轴审查；审查发现 3 项均修复并复核关闭。
-- [ ] 本轮 PR 的 CI 与主线交付。
+- [x] 本轮交付 PR #81 已建立；最终 CI 与主线合并状态以该 PR 的 GitHub 检查及合并记录为准。
 - [ ] #80：已联网查到官方参考价，但中转没有公开可确认费率，详见 docs/verification/relay-pricing.md。实际价格仍待中转账单/后台提供，成本保持未知。
 
 本轮 9 项 Node 单测、40 项 Node 与 40 项 Docker 浏览器回归、lint/typecheck/build、SQLx 在线/离线检查、HTTPS 自签名本地验收全部通过。用户确认当前没有服务器和域名，因此公网部署不在本轮执行范围；Redis/持久队列等后置项不扩展。以下旧阶段勾选保留为历史记录，当前状态以本节及 GitHub 验收为准。
