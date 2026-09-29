@@ -1,0 +1,66 @@
+name: Deploy Readiness
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  package-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: traceforge
+          POSTGRES_PASSWORD: traceforge
+          POSTGRES_DB: traceforge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://traceforge:traceforge@localhost:5432/traceforge
+      TEST_DATABASE_URL: postgresql://traceforge:traceforge@localhost:5432/traceforge
+      DEMO_MODE: "false"
+      TRACEFORGE_CHAT_GATEWAY_URL: http://localhost:8787
+      TRACEFORGE_CHAT_API_KEY: test-only-injected-chat-key
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD_HASH: plain:stage3-local-admin
+      MASTER_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      TRACEFORGE_EVAL_GATEWAY_URL: http://localhost:8787
+      TRACEFORGE_EVAL_API_KEY: tf-stage6-eval-key
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run db:deploy
+      - run: npx prisma validate
+      - run: npm run db:generate
+      - run: npm run build
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gateway
+      - working-directory: gateway
+        run: cargo test && cargo check --examples
+      - run: npm run deploy:check
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:docker
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: docker-verification-evidence
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

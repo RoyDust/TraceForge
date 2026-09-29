@@ -1,0 +1,17 @@
+graph LR
+    browser-submit["1. Submit Request\nChat Playground"]
+    console-validate["2. Validate & Allocate Run\nNext.js route handler"]
+    gateway-policy["3. Govern Request\nauth + limits + routing"]
+    provider-call["4. Execute Model\nJSON or SSE"]
+    trace-persist["5. Persist Trace\nRun + Span + Event"]
+    incident-view["6. Diagnose Result\nTrace detail UI"]
+    browser-submit -->|"model + messages"| console-validate
+    console-validate -->|"202 + runId; async dispatch"| gateway-policy
+    gateway-policy -->|"OpenAI-compatible request"| provider-call
+    provider-call -->|"response + usage + errors"| trace-persist
+    trace-persist -->|"Prisma query by runId"| incident-view
+    incident-view -->|"waterfall + responsibility domain"| browser-submit
+    classDef entry fill:#89b4fa,stroke:#89b4fa,color:#1e1e2e
+    classDef store fill:#a6e3a1,stroke:#a6e3a1,color:#1e1e2e
+    class browser-submit,console-validate,gateway-policy entry
+    class trace-persist store

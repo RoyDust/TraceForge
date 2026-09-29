@@ -7,6 +7,12 @@ node_modules/
 /out/
 next-env.d.ts
 *.tsbuildinfo
+tmp-*.log
+.next-dev.*.log
+.next-e2e/
+playwright-report/
+test-results/
+dependency-audit.json
 
 # Prisma generated client
 prisma/generated/

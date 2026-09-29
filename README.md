@@ -1,136 +1,106 @@
 # TraceForge
 
-> 面向 AI 应用开发者的 **AI 网关 + Agent 可观测平台**。
-> 让 AI 应用从「能跑」变成「可观测、可评估、可治理、可上线」。
+AI 网关与 Agent 可观测控制台。Rust Gateway 代理 OpenAI-compatible 调用并写入 Trace；Next.js Console 提供治理看板、追踪瀑布图、对话调试、Prompt 版本管理和 Eval 回归。两者共享 PostgreSQL，Prisma schema 是数据契约。
 
-数据面 / 控制面分离：**Rust（axum / tokio / sqlx）网关** + **Next.js（Prisma 7）控制台**，共享 PostgreSQL，以 Prisma schema 作单一事实源。
+## 当前能力（2026-09-29）
 
-## 核心卖点
+- **治理看板**：请求量、失败率、P95、Token、成本、日趋势、模型/供应商、限流、fallback 与流式错误，全部读取持久化数据。最近列表最多 9 个 Run，统计不受列表限制。
+- **Trace**：Run / Span / Event、调用树、瀑布图、责任域归因；可识别项目的网关拒绝允许没有 Span。
+- **Chat Playground**：预声明 Run ID，响应后由 Next.js after() 派发到真实 Gateway，支持非流式/流式调用及有截止时间的结果等待。
+- **Prompt / Eval**：版本发布和回滚；六种断言（llm_judge 目前是本地关键词规则）、人工复核、运行对比；同步评测有样本上限、超时和提交幂等。
+- **权限与展示**：单管理员、每个敏感入口独立校验 Session、全站 noindex；显式 DEMO_MODE 与 NODE_ENV 无关。
+- **部署与测试**：Node standalone、非 root Console 容器、数据库迁移、真实 PostgreSQL + Rust Gateway + mock 上游的 Playwright 回归。
 
-- **一次失败的 Agent 调用，3 步定位根因**——筛失败 → 看链路瀑布图 → 定责任域（模型 / Prompt / 工具 / 网络 / 限流 / 业务）。把可观测做到「可归因」，而不只是「可展示」。
-- **零侵入接入**：OpenAI Compatible，普通 LLM 调用仅改 `baseURL` 即可被网关接管并自动 Trace；Agent 多步链路通过 Trace API / SDK 上报 tool / workflow / db / review 等 Span。
-- **统一治理**：多 Provider 接入、按 Key 限流（RPM / 并发）、首 chunk 前 fallback、token / 成本 / 失败率 / P95 延迟项目维度看板。
-- **Prompt 版本管理 + Eval 回归**：改 Prompt 产生新版本可 diff / 回滚，跑评测集看通过率与回归对比。
+当前没有 Redis、持久化任务队列、独立 Worker、多用户权限或持久化 Chat 会话。网关限流为进程内状态；公开部署需要另外准备服务器、DNS、TLS 和真实密钥。验收矩阵见 [测试说明](docs/testing.md)，历史计划与交付记录见 [tasks/todo.md](tasks/todo.md)。
 
-## 架构
+## 本地快速开始
 
-```
-                  ┌─────────────────────────────────────────┐
-  Client          │            Rust 数据面 (Data Plane)        │      上游 LLM
- (改 baseURL) ───▶ │  TraceForge Gateway                       │ ───▶ OpenAI /
-                  │  · OpenAI Compatible 入口 + SSE 流式透传    │      兼容接口
-                  │  · token/耗时统计 · Key 校验 · 限流 · 采集  │
-                  └───────────────┬─────────────────────────┘
-                                  │ 有界 channel + async worker（观测写入不阻塞主转发）
-                                  ▼
-                          ┌───────────────┐
-                          │  PostgreSQL    │  ← Prisma schema 作单一事实源 / 数据契约
-                          └───────┬───────┘
-                                  │ 读 / 管理
-                  ┌───────────────▼─────────────────────────┐
-                  │           TS 控制面 (Control Plane)        │
-                  │  TraceForge Console (Next.js)             │
-                  │  · Dashboard · Trace 瀑布图 · Prompt · Eval │
-                  └───────────────────────────────────────────┘
-```
+需要 Node.js 22+、Rust stable、PostgreSQL 16（可用 Docker）。以下流程连接自己选择的数据库，不清空已有数据。
 
-| 层 | 职责 | 技术栈 |
-|----|------|--------|
-| **Rust 数据面** | 网关入口、代理转发、SSE 透传、token/耗时统计、Trace 写库、Key 校验 + 限流 | Rust · axum · tokio · reqwest · sqlx |
-| **TS 控制面** | 控制台 UI、Dashboard、Trace 可视化、Prompt 版本、Eval、业务 API | Next.js · React · Prisma 7 · Tailwind |
-| **共享存储** | 单一事实源 + 数据契约 | PostgreSQL · Redis（限流 / 缓存） |
+~~~bash
+cp .env.example .env
+npm ci
+npm run db:generate
+# 在 .env 填写下方变量；新数据库应用迁移
+npm run db:deploy
+npm run db:seed
+npm run usage:aggregate
+npm run dev
+~~~
 
-## 当前状态
+本地演示的 .env 至少设置：
 
-早期阶段，骨架先行。已落地：
+~~~dotenv
+DATABASE_URL="postgresql://traceforge:traceforge@localhost:5432/traceforge"
+DEMO_MODE="true"
+ADMIN_EMAIL=""
+ADMIN_PASSWORD_HASH=""
+MASTER_ENCRYPTION_KEY="<openssl rand -base64 32 的输出，保留此值>"
+TRACEFORGE_CHAT_GATEWAY_URL="http://localhost:8787"
+TRACEFORGE_CHAT_API_KEY="<自行生成的演示网关 Key>"
+TRACEFORGE_EVAL_GATEWAY_URL="http://localhost:8787"
+TRACEFORGE_EVAL_API_KEY="<同一个演示网关 Key>"
+TRACEFORGE_DEMO_UPSTREAM_URL="http://localhost:8799/v1"
+~~~
 
-- ✅ **数据契约**：`prisma/schema.prisma`（15 model + 6 enum，列名 snake_case 对齐 sqlx），通过 `prisma validate`。
-- ✅ **种子数据**：`prisma/seed.ts` 幂等灌入示例项目 / Key / Provider / Model / 定价 / Prompt / 一条 Trace。
-- ✅ **双 ORM 闸门验证**：`gateway/examples/sqlx_smoke.rs`，`query!` 宏编译期连库校验 Rust SQL 与 schema 一致（CI 跑 `cargo build --bins --examples`）。
-- ✅ **gateway 常驻服务**：axum HTTP server，`/healthz`（存活）+ `/readyz`（探 PostgreSQL）。
-- ✅ **console 骨架**：Next.js 16 控制台，连库列出项目（首页）。
+Seed 仅在 DEMO_MODE=true 时允许运行，幂等写入 Demo Project、mock 模型及定价、Prompt 两个版本、Eval 样本和 24 条 Run（每条两个 Span）；将上述显式配置的 Gateway Key 哈希写入数据库，不调用付费模型。重复 seed 不清空已有数据，但会更新固定 demo provider 的 mock 地址与加密凭据。
 
-按 PRD 分阶段推进中：Rust 网关 MVP（SSE 透传 + 限流）→ Trace 采集 → 控制台 + 瀑布图 → 成本看板 → Prompt 版本 → Eval。见下方[路线图](#路线图)与 [工程 PRD](TraceForge-工程PRD.md)。
+另开两个终端，从仓库根目录启动上游和网关。让 Gateway 使用与 seed 相同的 DATABASE_URL 和 MASTER_ENCRYPTION_KEY：
 
-## 目录
+~~~bash
+# 终端 2
+cargo run --manifest-path gateway/Cargo.toml --bin mock_upstream
+# 终端 3（根 .env 由 Gateway dotenv 加载；已导出的环境变量优先）
+GATEWAY_ADDR=0.0.0.0:8787 cargo run --manifest-path gateway/Cargo.toml --bin traceforge-gateway
+~~~
 
-| 路径 | 作用 |
-|------|------|
-| `prisma/schema.prisma` | 数据契约（单一事实源，15 model + 6 enum） |
-| `prisma.config.ts` | Prisma 7 连接 / 迁移 / seed 配置 |
-| `prisma/seed.ts` | 示例数据（项目 / Key / 模型 / 定价 / Prompt / 一条 Trace） |
-| `app/`、`lib/` | Next.js 控制台（控制面，App Router + Prisma 客户端） |
-| `gateway/` | Rust 数据面（axum 服务 + `examples/sqlx_smoke.rs` 闸门示例） |
-| `.github/workflows/ci.yml` | Prisma schema 与 Rust sqlx 同步校验 |
-| `TraceForge-工程PRD.md` | 工程实现依据（精修层） |
-| `TraceForge_AI网关与Agent可观测平台_PRD.md` | 完整版 PRD（字段口径权威源） |
+打开 http://localhost:3000/dashboard。显式 Demo 且未配置自定义管理员时，使用 demo@traceforge.local / traceforge-demo；界面持续显示演示标识。关闭 Demo 后必须配置自有管理员，演示密码和 change-me 占位密码（包括其哈希）均被拒绝。所有页面仍需登录。
 
-## 快速开始
+~~~bash
+curl http://localhost:8787/healthz
+curl http://localhost:8787/readyz
+~~~
 
-前置：Node 22+、Rust stable、PostgreSQL（本地可用 `docker run -e POSTGRES_PASSWORD=traceforge -e POSTGRES_USER=traceforge -e POSTGRES_DB=traceforge -p 5432:5432 postgres:16`）。
+如果已有旧版数据库，请先按 [部署说明](DEPLOYMENT.md) 备份、核对差异并建立迁移基线，不能对有数据的库直接重放完整首次迁移。
 
-```bash
-cp .env.example .env            # 填好 DATABASE_URL
-npm install
-npm run db:push                 # 用 schema.prisma 建表 (首版无迁移文件; 正式用 db:migrate)
-npm run db:seed                 # 灌示例数据
-npm run db:studio               # 可选: 浏览数据
-npm run dev                      # 起控制台 -> http://localhost:3000 (列出 seed 项目)
-```
+## 验证
 
-> 离线编译（无 DB 时 `cargo build`）：在能连库时跑 `cargo sqlx prepare` 生成并提交 `gateway/.sqlx/`。
+~~~bash
+npm run lint
+npm run typecheck
+npm run test:unit
+npx prisma validate
+npm run build
+npx playwright install chromium
+npm run test:e2e
+npm run test:docker
+npm run deploy:check
+~~~
 
-### 本地原生开发（无 Docker）
+E2E 默认创建临时 PostgreSQL 容器；也可显式提供 TEST_DATABASE_URL。每轮只操作自己的随机 schema，测试后清理。Node 与 Docker 模式共用真实 Gateway 和浏览器用例；Docker 模式验证 UID 1001、普通配置、Demo 和缺少 API Key 的运行实例。deploy:check 校验当前 .env 的实际值，不代替网络就绪检查。
 
-两个服务各自一个进程，都直连同一个 PostgreSQL：
+## 数据与运行契约
 
-```bash
-# 控制台 (TS 控制面) —— 仓库根
-npm run dev                      # http://localhost:3000
+- 数据库存储和 API 时间均为 UTC，页面及筛选为 Asia/Shanghai。日期范围左闭右开；UsageDaily.date 是上海自然日标签。
+- 请求数按 Run 计算；Token 对同范围 Span 求和；总成本取 Run.cost，不能与 Span.cost 再相加。P95 使用全区间有效延迟，不平均各日 P95。成本内部使用 Decimal；缺失成本显示“—”。
+- UsageDaily 只有在与当前明细快照的数量、Token、成本一致时才用于趋势，否则使用数据库聚合；聚合脚本采用锁和事务重建选定日期范围。
+- Chat after() 是进程内尽力派发，超时或重启可能留下未确认状态。签名 pending 凭据有截止时间，界面不会无限等待，也不会自动重发状态不明的付费请求。
+- Eval 默认最多 20 样本、单次调用 30 秒、总预算 120 秒。读取页面时回收超期 running 任务，保留已有结果与费用；人工复核不会把执行失败伪装成成功。fallback 按 Gateway 实际模型计价，无定价或用量时成本未知。
+- Next loading 已发出流式响应后，缺失资源显示标准 not-found UI，HTTP 状态可能为 200；未开始流式响应的缺失路由返回 404。
 
-# 网关 (Rust 数据面) —— gateway/
-cd gateway
-cargo run                       # 读 gateway/.env; 默认 http://0.0.0.0:8080
-curl localhost:8080/healthz     # 存活 -> ok
-curl localhost:8080/readyz      # 就绪 (探 PostgreSQL) -> ready
-```
+## 工程入口
 
-- 网关监听地址可用 `GATEWAY_ADDR` 覆盖（如 8080 被占）：在 `gateway/.env` 设 `GATEWAY_ADDR="0.0.0.0:8787"`。
-- 控制台端口被占时用 `npm run dev -- -p 3001`。
-- 双 ORM 闸门冒烟：`cd gateway && cargo run --example sqlx_smoke`（写读一条 Trace，验证 sqlx 与 schema 一致）。
-- Docker / Compose 留到部署阶段（PRD Stage 6）或本机装 Docker 后再做。
+| 路径 | 用途 |
+| --- | --- |
+| prisma/schema.prisma、prisma/migrations | 数据契约和可重复数据库迁移 |
+| app/(console)、lib | Console 页面、权限、聚合与执行逻辑 |
+| gateway | Rust 数据面、mock 上游与 SQLx 编译检查 |
+| tests、scripts/run-e2e.mjs | 单元测试、真实进程验收与隔离资源清理 |
+| DEPLOYMENT.md、docs/testing.md | 环境契约、部署流程与规格验收 |
+| CONTEXT.md、docs/adr | 领域术语和已接受决策 |
+| tasks/todo.md | 当前任务状态及历史审查记录 |
 
-### 在非 public schema / 共享库上开发
-
-若 DB 账号没有 `CREATEDB` 权限（无法新建独立数据库），可退而把全部表放进现有库的一个独立 schema（如 `traceforge`），与该库其他表隔离，需要时 `DROP SCHEMA traceforge CASCADE` 即可清除。指定 schema 时 **Prisma 与 sqlx 写法不同，两个 `.env` 都要带**：
-
-| 工具 | 文件 | DATABASE_URL 末尾 |
-|------|------|------------------|
-| Prisma（CLI / Studio / seed） | 根 `.env` | `?schema=traceforge` |
-| Rust sqlx（编译期 `query!` + 运行期） | `gateway/.env` | `?options=-c%20search_path%3Dtraceforge`（sqlx 不解析 `?schema=`） |
-
-`prisma/seed.ts` 会从 `DATABASE_URL` 解析 `?schema=` 并传给 `PrismaPg` 适配器（driver adapter 默认落 `public`，不传则找不到表）。两个 `.env` 均含真实凭证，**勿提交版本库**（已在 `.gitignore`）。
-
-## 双 ORM 契约
-
-PostgreSQL 是单一事实源：**Prisma 负责 migration**（改 `schema.prisma` 后 `npm run db:migrate`），**Rust 用 sqlx 按表读写**。两边靠 CI 同步——[`ci.yml`](.github/workflows/ci.yml) 先 `prisma db push` 建库，再 `cargo build` 让 sqlx 的 `query!` 宏在编译期校验 Rust SQL 是否与 schema 一致；schema 漂移会让 CI 失败。
-
-约定：Rust 只写 Trace 热路径表（TraceRun / Span / Event）；Project / ApiKey / Prompt 等控制面实体由 Console（Prisma）写。主键 id 两边都应用侧生成（Prisma `uuid()` / Rust `uuid` crate）。
-
-## 路线图
-
-按 PRD 分阶段交付，每阶段可独立验收：
-
-| 阶段 | 内容 |
-|------|------|
-| Stage 0 | Docker Compose 跑通 gateway + console + PostgreSQL 骨架 |
-| Stage 1 | Rust 网关 MVP：`/v1/chat/completions` 代理 + SSE 透传 + Key 校验 + Redis 限流 + `/healthz` `/readyz` `/metrics` |
-| Stage 2 | Trace 采集：有界 channel + async worker 异步写库，记录 usage / 耗时 / 状态 / error_code |
-| Stage 2.5 | Trace SDK / 手动 Span 上报，示例写作 Agent 落库为多步 Trace |
-| Stage 3 | Console + Trace 瀑布图，NextAuth 单管理员，3 步定位根因 |
-| Stage 4 | 成本 Dashboard + 限流 / fallback 治理可视化 |
-| Stage 5 | Prompt 版本管理 + diff / 回滚 |
-| Stage 6 | Eval 回归评测 + 部署上线 |
+Schema 修改通过 Prisma migration 管理；CI 先部署迁移，再编译 Rust SQLx 查询宏，防止两套访问代码与数据库结构漂移。非 public schema 的 Console URL 使用 ?schema=traceforge；Rust URL 使用 ?options=-c%20search_path%3Dtraceforge。真实凭据只留在本地环境或部署秘密存储中。
 
 ## 许可
 

@@ -22,6 +22,16 @@ _Avoid_: log、signal
 泛指整棵 Run→Span→Event 树的非正式总称，**不是**落库实体。
 _Avoid_: 把 "Trace" 当某张表/实体名使用
 
+### Console 工具
+
+**Chat Playground**（中文：对话测试页）：
+登录后的 Console 工具页，用于临时发起 OpenAI-compatible chat completion 调用并定位对应 TraceRun；不是持久化会话或业务实体。
+_Avoid_: ChatSession、公开 demo page、public playground、conversation entity
+
+**演示模式**（`DEMO_MODE`）：
+Console 可显式启用的展示模式，允许使用预置登录凭据和由 seed 生成的演示数据，并必须持续显示演示标识。演示模式与开发环境或正式部署环境无关，正式部署也可以主动启用。
+_Avoid_: development mode、测试环境、数据库故障时的假数据降级
+
 ### 归因
 
 **责任域**：

@@ -2,10 +2,15 @@ name: CI
 
 on: [push, pull_request]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   schema-sqlx-sync:
-    name: Prisma schema ↔ Rust sqlx 同步校验
+    name: Schema, Console and browser acceptance
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     services:
       postgres:
@@ -24,16 +29,26 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://traceforge:traceforge@localhost:5432/traceforge
+      TEST_DATABASE_URL: postgresql://traceforge:traceforge@localhost:5432/traceforge
+      ADMIN_EMAIL: smoke@example.com
+      ADMIN_PASSWORD_HASH: plain:e2e-local-password
+      NEXT_TELEMETRY_DISABLED: 1
 
     steps:
       - uses: actions/checkout@v4
 
-      # 控制面: 用 schema.prisma (单一事实源) 把表建到 DB。正式部署改用 `prisma migrate deploy`。
+      # 在干净 PostgreSQL 上应用同一套已提交迁移。
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --no-audit --no-fund
-      - run: npx prisma db push --skip-generate
+      - run: npm ci
+      - run: npx prisma validate
+      - run: npm run db:generate
+      - run: npm run db:deploy
+      - run: npm run test:unit
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
 
       # 数据面: sqlx query! 宏在编译期连库校验。Rust SQL 与 Prisma schema 不一致 -> 构建失败。
       # query! 宏在 examples/sqlx_smoke.rs, 故必须带 --examples 才能触发闸门 (--bins 编主服务)。
@@ -43,3 +58,18 @@ jobs:
           workspaces: gateway
       - working-directory: gateway
         run: cargo build --bins --examples
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - name: Record dependency audit without forced remediation
+        if: always()
+        run: npm audit --json > dependency-audit.json
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-evidence
+          path: |
+            playwright-report/
+            test-results/
+            dependency-audit.json
+          retention-days: 7

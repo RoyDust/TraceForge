@@ -1,0 +1,13 @@
+graph TD
+    http-entry["HTTP Entry\nRouter + handlers"]
+    auth-limit["Auth & Limits\nAPI key + RPM + concurrency"]
+    model-routing["Model Routing\nprovider + fallback chain"]
+    proxy-stream["Proxy & SSE\nreqwest + Body stream"]
+    trace-pipeline["Trace Pipeline\ngateway/src/trace.rs"]
+    runtime-metrics["Runtime Metrics\n/metrics atomics"]
+    http-entry -->|"校验请求"| auth-limit
+    auth-limit -->|"允许后解析模型"| model-routing
+    model-routing -->|"逐跳调用"| proxy-stream
+    proxy-stream -->|"采集 usage、事件与错误"| trace-pipeline
+    http-entry -->|"记录请求指标"| runtime-metrics
+    proxy-stream -->|"记录首 token 与流错误"| runtime-metrics

@@ -15,7 +15,7 @@ use std::time::Duration;
 use axum::extract::Query;
 use axum::response::sse::{Event, Sse};
 use axum::response::{IntoResponse, Response};
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{body::Bytes, http::StatusCode, Json, Router};
 use futures_util::stream::{self, Stream};
 use serde_json::{json, Value};
@@ -23,7 +23,9 @@ use std::convert::Infallible;
 
 #[tokio::main]
 async fn main() {
-    let app = Router::new().route("/v1/chat/completions", post(chat));
+    let app = Router::new()
+        .route("/healthz", get(|| async { "ok" }))
+        .route("/v1/chat/completions", post(chat));
     let addr: SocketAddr = std::env::var("MOCK_ADDR")
         .unwrap_or_else(|_| "0.0.0.0:8799".to_string())
         .parse()
@@ -40,7 +42,10 @@ struct Q {
 
 async fn chat(Query(q): Query<Q>, body: Bytes) -> Response {
     let parsed: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
-    let is_stream = parsed.get("stream").and_then(Value::as_bool).unwrap_or(false);
+    let is_stream = parsed
+        .get("stream")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let want_usage = parsed
         .get("stream_options")
         .and_then(|o| o.get("include_usage"))

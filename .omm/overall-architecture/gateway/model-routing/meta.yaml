@@ -1,0 +1,9 @@
+created: 2026-07-12T18:07:09.461Z
+updated: 2026-07-12T18:07:09.462Z
+update_count: 1
+last_field: description
+kind: nested-class
+title: model-routing
+children: []
+parentPath:
+  - gateway

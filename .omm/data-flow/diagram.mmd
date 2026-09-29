@@ -1,0 +1,19 @@
+graph LR
+    request["Request Payload\nmodel + messages"]
+    policy["Gateway Policy\nauth + limits + routing"]
+    response["Provider Response\nJSON or SSE"]
+    trace-job["TraceJob\nnormalized telemetry"]
+    storage["PostgreSQL\nTrace + pricing + eval"]
+    query["Prisma Queries\nserver components"]
+    view-model["UI View Models\nderived evidence"]
+    ui["Console UI\nwaterfall + metrics + diffs"]
+    request -->|"进入治理"| policy
+    policy -->|"转发并采集"| response
+    request -->|"提取 input preview"| trace-job
+    response -->|"提取 output/usage/events"| trace-job
+    trace-job -->|"后台批量写入"| storage
+    storage -->|"读取运行与评测数据"| query
+    query -->|"转换展示结构"| view-model
+    view-model -->|"渲染证据"| ui
+    classDef store fill:#a6e3a1,stroke:#a6e3a1,color:#1e1e2e
+    class storage store
