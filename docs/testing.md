@@ -65,6 +65,22 @@ Spec 审查发现并修复：过期 Eval 丢汇总、部分失败封死人工复
 
 2026-09-29 重跑 npm audit --json：0 critical、4 high、0 moderate。仍来自 Prisma 工具链传递依赖；npm 提议的完整自动修复会跨主版本回退到 Prisma 6.19.3，未采用。详见 [依赖审计记录](verification/issue-61-dependency-audit.md)。功能验收通过不代表这些上游风险已经消除。
 
+## 2026-09-29 最终验收记录
+
+验收提交：`474684384199aa04e4d7aaab0ab0459439f40e85`，已推送到 `codex/complete-console-remediation`，通过 [PR #73](https://github.com/RoyDust/TraceForge/pull/73) 交付。独立 worktree 使用 `npm ci --registry=https://registry.npmjs.org --no-audit` 安装依赖，受版本控制文件无修改；复用 Cargo 构建缓存，但每轮仍执行真实 Gateway 编译与隔离 PostgreSQL migration。
+
+| 验证 | 干净检出结果 | GitHub 同版本证据 |
+| --- | --- | --- |
+| lint、Next typegen / TypeScript、Prisma generate / validate、生产 standalone 构建 | 全部通过 | [CI 36534950758](https://github.com/RoyDust/TraceForge/actions/runs/36534950758) |
+| 纯函数与配置单元测试 | 8 / 8 通过 | 同上 |
+| Node standalone 浏览器回归 | 32 / 32 通过，1.0 分钟 | 同上，32 / 32，1.1 分钟 |
+| 非 root Docker 浏览器回归 | 32 / 32 通过，1.1 分钟 | [Deploy Readiness 36534950608](https://github.com/RoyDust/TraceForge/actions/runs/36534950608)，32 / 32，1.1 分钟 |
+| SQLx 编译、数据库迁移、部署环境校验 | 本地及对应 CI 步骤通过 | 上述两个工作流；[push CI 36534945535](https://github.com/RoyDust/TraceForge/actions/runs/36534945535) 也通过 |
+
+Node 与 Docker 均使用真实 PostgreSQL、Rust Gateway 和 mock OpenAI 上游；Docker 场景包含实际重启 Console 后的未确认派发截止恢复。每轮测试 schema 与测试容器均正常清理。修复锁文件中唯一内网 tarball 地址后，公共 npm registry 安装及 GitHub 安装步骤均通过，包版本和 integrity 不变。
+
+本地保留数据完成迁移后，实际登录治理看板并验证 Chat → Gateway → mock 上游 → Trace 成功；1280 / 1440 / 390 视口检查 KPI 数值完整可见。其后交付提交仅补充验收记录，最终 PR head 再执行同套 GitHub 检查，合并以该 head 检查成功为前提。
+
 ## 交付边界
 
 最终验收以可拉取提交、干净检出运行及 GitHub CI 的同版本结果为准。未经实际执行，不声称公网部署、真实 Provider 付费调用或跨进程持久任务已经验收。Node/Docker 运行日志、截图、查询计划和依赖 JSON 作为验证证据保留，Issue 关闭附对应提交和运行结果。

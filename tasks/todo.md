@@ -2,7 +2,7 @@
 
 ## Console 整改（2026-09-29）
 
-已恢复完整 UI / Gateway 基线，工作分支 codex/complete-console-remediation。用户此前只能看到最小控制台，是远端 master 未包含完整开发成果；本轮交付同时包含恢复基线和 #60 整改。
+已恢复完整 UI / Gateway 基线，本轮通过 PR #73 交付恢复基线和 #60 整改。用户此前只能看到最小控制台，是远端 master 未包含完整开发成果。
 
 - [x] #61：Next 16.3.6、lint、typegen、真实进程浏览器基线。
 - [x] #62–#63：显式 Demo、禁止默认生产凭据、持久标识、server-only DAL、读写独立授权、共享 Console 外壳。
@@ -10,7 +10,9 @@
 - [x] #67–#68：持久化 demo、完整数据库聚合、UsageDaily 对账、有限明细、真实治理证据。
 - [x] #69–#70：after 托管 Chat、有截止 pending、同步 Eval 预算与幂等、失败汇总及人工复核。
 - [x] #71：standalone 非 root 镜像、实际环境校验、Node/Docker 共用浏览器验收、启动/迁移/TLS 文档。
-- [ ] #72：从最终干净提交跑完整 Node/Docker 回归、推送可拉取分支并完成 CI / 主线交付。
+- [x] #72：干净检出 474684384199aa04e4d7aaab0ab0459439f40e85，8 项单测、32 项 Node 与 32 项 Docker 回归全部通过；同版本 CI / Deploy Readiness 全绿，以 PR #73 交付主线。
+
+验收提交已推送，独立 worktree 的受版本控制文件无修改；详细命令、GitHub 运行编号和验收边界见 docs/testing.md。其后交付提交仅补充验收记录，最终 PR head 仍须通过同套 GitHub 检查后合并。
 
 Standards / Spec 双轴审查的发现均已逐项修复；对应回归及 36 条用户故事映射见 docs/testing.md。历史记录保留如下，其中“master 缺失代码”“#61 无法开工”等均为 2026-09-28 的审查快照，不代表本轮最终状态。
 
