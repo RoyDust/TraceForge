@@ -1,4 +1,7 @@
-import type { AssertionType, Prisma, PrismaClient } from "@prisma/client";
+import { randomUUID } from "node:crypto";
+import { demoMode, evalLimits, gatewayConfig } from "@/lib/env";
+import { InputError } from "@/lib/validation";
+import { Prisma, type AssertionType, type PrismaClient } from "@prisma/client";
 
 type EvalCaseLike = {
   id: string;
@@ -26,6 +29,7 @@ export type AssertionOutcome = {
 };
 
 export type EvalRunRequest = {
+  runId?: string;
   datasetId: string;
   promptVersionId: string;
   modelConfigId: string;
@@ -164,161 +168,97 @@ function mockOutput(evalCase: EvalCaseLike, promptVersion: PromptVersionLike) {
   return null;
 }
 
-async function callGateway({
-  evalCase,
-  promptVersion,
-  modelConfig,
-  gatewayUrl,
-  apiKey,
-}: {
-  evalCase: EvalCaseLike;
-  promptVersion: PromptVersionLike;
-  modelConfig: ModelConfigLike;
-  gatewayUrl: string;
-  apiKey: string;
-}) {
-  const started = Date.now();
-  const response = await fetch(`${gatewayUrl.replace(/\/$/, "")}/v1/chat/completions`, {
+async function callGateway(evalCase: EvalCaseLike, prompt: PromptVersionLike, model: ModelConfigLike, config: { url: string; apiKey: string; timeoutMs: number }, deadline: number) {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw new InputError("评测总预算已耗尽。");
+  const response = await fetch(config.url + "/v1/chat/completions", {
     method: "POST",
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: modelConfig.modelName,
-      stream: false,
-      messages: [
-        { role: "system", content: promptVersion.content },
-        { role: "user", content: evalCase.input },
-      ],
-    }),
+    headers: { authorization: "Bearer " + config.apiKey, "content-type": "application/json", "X-TraceForge-Prompt-Version": prompt.id },
+    signal: AbortSignal.timeout(Math.max(1, Math.min(config.timeoutMs, remaining))),
+    body: JSON.stringify({ model: model.modelName, stream: false, messages: [{ role: "system", content: prompt.content }, { role: "user", content: evalCase.input }] }),
   });
-  const body = (await response.json().catch(() => null)) as JsonObject | null;
-  if (!response.ok) {
-    const message = asObject(body?.error as Prisma.JsonValue | null).message;
-    throw new Error(typeof message === "string" ? message : `网关返回 HTTP ${response.status}`);
+  if (!response.ok) { await response.body?.cancel(); throw new InputError("网关返回 HTTP " + response.status); }
+  const body = await response.json() as JsonObject;
+  const choices = Array.isArray(body.choices) ? body.choices : [];
+  const output = choices.map((choice) => asObject(asObject(choice).message as Prisma.JsonValue).content).filter((value): value is string => typeof value === "string").join("");
+  if (!choices.length || output.length > 128000) throw new InputError("网关响应无效或过大。");
+  const usage = asObject(body.usage as Prisma.JsonValue);
+  return { output, promptTokens: typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : null, completionTokens: typeof usage.completion_tokens === "number" ? usage.completion_tokens : null };
+}
+
+export async function expireEvalRuns(db: PrismaClient) {
+  await db.$transaction(async (tx) => {
+    const expired = await tx.evalRun.findMany({ where: { status: "running", OR: [{ deadlineAt: { lte: new Date() } }, { deadlineAt: null, createdAt: { lt: new Date(Date.now() - 300_000) } }] }, select: { id: true } });
+    const ids = expired.map((run) => run.id);
+    if (!ids.length) return;
+    await tx.evalRun.updateMany({ where: { id: { in: ids }, status: "running" }, data: { status: "failed" } });
+    await tx.evalResult.updateMany({ where: { evalRunId: { in: ids }, status: "pending" }, data: { status: "error", pass: false, judgeReason: "执行超时或进程中断；不会自动重试。" } });
+  });
+}
+
+export async function refreshEvalRunSummary(db: Prisma.TransactionClient, evalRunId: string) {
+  const results = await db.evalResult.findMany({ where: { evalRunId } });
+  const scores = results.flatMap((result) => result.score === null ? [] : [result.score]);
+  const averageScore = scores.length ? scores.reduce((sum, score) => sum.plus(score), new Prisma.Decimal(0)).div(scores.length) : null;
+  const costs = results.flatMap((result) => result.cost === null ? [] : [result.cost]);
+  const totalCost = costs.length ? costs.reduce((sum, cost) => sum.plus(cost), new Prisma.Decimal(0)) : null;
+  const status = results.some((r) => r.status === "pending") ? "running" : results.some((r) => r.status === "error") ? "failed" : results.some((r) => r.status === "needs_review") ? "needs_review" : "completed";
+  await db.evalRun.updateMany({ where: { id: evalRunId, status: { not: "failed" } }, data: { status, averageScore, totalCost, durationMs: results.reduce((sum, r) => sum + (r.durationMs ?? 0), 0) } });
+}
+
+export async function runEvalDataset(db: PrismaClient, request: EvalRunRequest) {
+  await expireEvalRuns(db);
+  const id = request.runId ?? randomUUID();
+  const existing = await db.evalRun.findUnique({ where: { id } });
+  if (existing) {
+    if (existing.datasetId !== request.datasetId || existing.promptVersionId !== request.promptVersionId || existing.modelConfigId !== request.modelConfigId) throw new InputError("提交 ID 已用于其他评测。");
+    return existing;
   }
-  const choices = Array.isArray(body?.choices) ? body.choices : [];
-  const output = choices
-    .map((choice) => asObject(asObject(choice as Prisma.JsonValue).message as Prisma.JsonValue | null).content)
-    .filter((content): content is string => typeof content === "string")
-    .join("");
-  const usage = asObject(body?.usage as Prisma.JsonValue | null);
-  const promptTokens = typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : 0;
-  const completionTokens = typeof usage.completion_tokens === "number" ? usage.completion_tokens : 0;
-  const cost = promptTokens * 0.000001 + completionTokens * 0.000002;
-  return { output, cost, durationMs: Date.now() - started };
-}
-
-async function outputForCase({
-  evalCase,
-  promptVersion,
-  modelConfig,
-  gatewayUrl,
-  apiKey,
-}: {
-  evalCase: EvalCaseLike;
-  promptVersion: PromptVersionLike;
-  modelConfig: ModelConfigLike;
-  gatewayUrl: string;
-  apiKey: string;
-}) {
-  const configured = mockOutput(evalCase, promptVersion);
-  if (configured !== null) return { output: configured, cost: 0, durationMs: 1 };
-  return callGateway({ evalCase, promptVersion, modelConfig, gatewayUrl, apiKey });
-}
-
-export async function refreshEvalRunSummary(prisma: PrismaClient, evalRunId: string) {
-  const results = await prisma.evalResult.findMany({ where: { evalRunId } });
-  const finished = results.filter((result) => result.status !== "pending");
-  const scoreValues = finished.flatMap((result) => (result.score === null ? [] : [Number(result.score.toString())]));
-  const averageScore =
-    scoreValues.length === 0 ? null : scoreValues.reduce((sum, score) => sum + score, 0) / scoreValues.length;
-  const totalCost = finished.reduce((sum, result) => sum + Number(result.cost?.toString() ?? 0), 0);
-  const durationMs = finished.reduce((sum, result) => sum + (result.durationMs ?? 0), 0);
-  const status = results.some((result) => result.status === "failed")
-    ? "completed"
-    : results.some((result) => result.status === "needs_review")
-      ? "needs_review"
-      : "completed";
-
-  await prisma.evalRun.update({
-    where: { id: evalRunId },
-    data: {
-      status,
-      averageScore: averageScore === null ? null : averageScore.toFixed(3),
-      totalCost: totalCost.toFixed(10),
-      durationMs,
-    },
-  });
-}
-
-export async function runEvalDataset(prisma: PrismaClient, request: EvalRunRequest) {
-  const gatewayUrl = request.gatewayUrl ?? process.env.TRACEFORGE_EVAL_GATEWAY_URL ?? "http://localhost:8787";
-  const apiKey = request.apiKey ?? process.env.TRACEFORGE_EVAL_API_KEY ?? "tf-stage6-eval-key";
-
+  let config: ReturnType<typeof gatewayConfig>, limits: ReturnType<typeof evalLimits>;
+  try { config = gatewayConfig("EVAL"); limits = evalLimits(); } catch (error) { throw new InputError(error instanceof Error ? error.message : "评测配置无效。"); }
   const [dataset, promptVersion, modelConfig] = await Promise.all([
-    prisma.evalDataset.findUnique({
-      where: { id: request.datasetId },
-      include: { cases: { orderBy: { createdAt: "asc" } } },
-    }),
-    prisma.promptVersion.findUnique({ where: { id: request.promptVersionId } }),
-    prisma.modelConfig.findUnique({ where: { id: request.modelConfigId } }),
+    db.evalDataset.findUnique({ where: { id: request.datasetId }, include: { cases: { orderBy: { createdAt: "asc" }, take: limits.maxCases + 1 } } }),
+    db.promptVersion.findUnique({ where: { id: request.promptVersionId }, include: { prompt: true } }),
+    db.modelConfig.findUnique({ where: { id: request.modelConfigId }, include: { provider: true } }),
   ]);
-
-  if (!dataset) throw new Error("评测数据集不存在。");
-  if (!promptVersion) throw new Error("提示词版本不存在。");
-  if (!modelConfig) throw new Error("模型配置不存在。");
-  if (dataset.cases.length === 0) throw new Error("评测数据集至少需要一个评测样本。");
-
-  const run = await prisma.evalRun.create({
-    data: {
-      datasetId: dataset.id,
-      promptVersionId: promptVersion.id,
-      modelConfigId: modelConfig.id,
-      status: "running",
-    },
-  });
-
-  for (const evalCase of dataset.cases) {
-    const started = Date.now();
-    try {
-      const execution = await outputForCase({ evalCase, promptVersion, modelConfig, gatewayUrl, apiKey });
-      const outcome = evaluateAssertion(evalCase, execution.output);
-      await prisma.evalResult.create({
-        data: {
-          evalRunId: run.id,
-          evalCaseId: evalCase.id,
-          output: execution.output,
-          assertionType: evalCase.assertionType,
-          pass: outcome.pass,
-          score: outcome.score === null ? null : outcome.score.toFixed(3),
-          judgeReason: outcome.judgeReason,
-          cost: execution.cost.toFixed(10),
-          durationMs: execution.durationMs,
-          status: outcome.status,
-        },
-      });
-    } catch (error) {
-      await prisma.evalResult.create({
-        data: {
-          evalRunId: run.id,
-          evalCaseId: evalCase.id,
-          output: null,
-          assertionType: evalCase.assertionType,
-          pass: false,
-          score: "0.000",
-          judgeReason: `执行失败：${String(error)}`,
-          cost: "0",
-          durationMs: Date.now() - started,
-          status: "failed",
-        },
-      });
+  if (!dataset || !promptVersion || !modelConfig) throw new InputError("数据集、提示词版本或模型不存在。");
+  if (promptVersion.prompt.projectId !== dataset.projectId) throw new InputError("提示词与数据集不属于同一项目。");
+  if (modelConfig.status !== "active" || modelConfig.provider.status !== "active") throw new InputError("模型或供应商已停用。");
+  if (!dataset.cases.length || dataset.cases.length > limits.maxCases) throw new InputError("评测样本数必须为 1–" + limits.maxCases + "。");
+  const pricing = await db.modelPricing.findFirst({ where: { model: modelConfig.modelName, provider: modelConfig.provider.name, effectiveFrom: { lte: new Date() } }, orderBy: { effectiveFrom: "desc" } });
+  const deadline = Date.now() + limits.totalTimeoutMs;
+  try {
+    await db.evalRun.create({ data: { id, datasetId: dataset.id, promptVersionId: promptVersion.id, modelConfigId: modelConfig.id, status: "running", deadlineAt: new Date(deadline), results: { create: dataset.cases.map((c) => ({ evalCaseId: c.id, assertionType: c.assertionType, status: "pending" })) } } });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      const concurrent = await db.evalRun.findUniqueOrThrow({ where: { id } });
+      if (concurrent.datasetId !== dataset.id || concurrent.promptVersionId !== promptVersion.id || concurrent.modelConfigId !== modelConfig.id) throw new InputError("提交 ID 冲突。");
+      return concurrent;
     }
+    throw error;
   }
-
-  await refreshEvalRunSummary(prisma, run.id);
-  return prisma.evalRun.findUniqueOrThrow({ where: { id: run.id } });
+  for (const evalCase of dataset.cases) {
+    if (Date.now() >= deadline) break;
+    const started = Date.now();
+    let data: Prisma.EvalResultUpdateManyMutationInput;
+    try {
+      const mocked = demoMode() ? mockOutput(evalCase, promptVersion) : null;
+      const execution = mocked === null ? await callGateway(evalCase, promptVersion, modelConfig, config, deadline) : { output: mocked, promptTokens: null, completionTokens: null };
+      if (Date.now() >= deadline) break;
+      const outcome = evaluateAssertion(evalCase, execution.output);
+      const cost = mocked !== null ? new Prisma.Decimal(0) : pricing && execution.promptTokens !== null && execution.completionTokens !== null ? pricing.inputPrice.mul(execution.promptTokens).plus(pricing.outputPrice.mul(execution.completionTokens)) : null;
+      data = { output: execution.output, pass: outcome.pass, score: outcome.score, judgeReason: outcome.judgeReason, cost, durationMs: Date.now() - started, status: outcome.status };
+    } catch {
+      data = { pass: false, score: 0, judgeReason: "网关执行失败或超时；请查看对应 TraceRun。", durationMs: Date.now() - started, status: "error" };
+    }
+    // Late completions cannot overwrite a timeout or reviewed terminal result.
+    await db.evalResult.updateMany({ where: { evalRunId: id, evalCaseId: evalCase.id, status: "pending", evalRun: { status: "running", deadlineAt: { gt: new Date() } } }, data });
+  }
+  await db.$transaction(async (tx) => {
+    await tx.evalResult.updateMany({ where: { evalRunId: id, status: "pending" }, data: { status: "error", pass: false, judgeReason: "评测总预算已耗尽或执行中断；未自动重试。" } });
+    await refreshEvalRunSummary(tx, id);
+  });
+  return db.evalRun.findUniqueOrThrow({ where: { id } });
 }
 
 export function passRate(results: Array<{ pass: boolean | null }>) {

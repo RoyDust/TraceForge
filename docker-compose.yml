@@ -21,10 +21,17 @@ services:
       dockerfile: Dockerfile.console
     environment:
       DATABASE_URL: postgresql://traceforge:traceforge@postgres:5432/traceforge
-      ADMIN_EMAIL: admin@example.com
-      ADMIN_PASSWORD_HASH: plain:stage3-local-admin
+      DEMO_MODE: ${DEMO_MODE:-false}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+      TRACEFORGE_CHAT_GATEWAY_URL: http://gateway:8787
+      TRACEFORGE_CHAT_API_KEY: ${TRACEFORGE_CHAT_API_KEY:-}
+      TRACEFORGE_CHAT_TIMEOUT_MS: ${TRACEFORGE_CHAT_TIMEOUT_MS:-30000}
       TRACEFORGE_EVAL_GATEWAY_URL: http://gateway:8787
-      TRACEFORGE_EVAL_API_KEY: tf-stage6-eval-key
+      TRACEFORGE_EVAL_API_KEY: ${TRACEFORGE_EVAL_API_KEY:-}
+      TRACEFORGE_EVAL_TIMEOUT_MS: ${TRACEFORGE_EVAL_TIMEOUT_MS:-30000}
+      TRACEFORGE_EVAL_MAX_CASES: ${TRACEFORGE_EVAL_MAX_CASES:-20}
+      TRACEFORGE_EVAL_TOTAL_TIMEOUT_MS: ${TRACEFORGE_EVAL_TOTAL_TIMEOUT_MS:-120000}
     ports:
       - "3000:3000"
     depends_on:

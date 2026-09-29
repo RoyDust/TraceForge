@@ -6,3 +6,10 @@ tmp-*.log
 .env
 gateway/.env
 tsconfig.tsbuildinfo
+
+.next*
+.env*
+!.env.example
+playwright-report
+test-results
+*.tsbuildinfo

@@ -46,8 +46,9 @@ test("sidebar collapse survives a page reload", async ({ page }) => {
   await expect(page.getByRole("button", { name: "收起侧边栏", exact: true })).toHaveAttribute("aria-expanded", "true");
 });
 
-test("mock Gateway responds over the real HTTP boundary", async ({ request }) => {
+test("real Gateway proxies to the mock upstream over HTTP", async ({ request }) => {
   const response = await request.post("http://127.0.0.1:" + process.env.TRACEFORGE_E2E_GATEWAY_PORT + "/v1/chat/completions", {
+    headers: { authorization: "Bearer e2e-local-key" },
     data: { model: "mock-ok", messages: [{ role: "user", content: "smoke test" }] },
   });
   expect(response.ok()).toBeTruthy();

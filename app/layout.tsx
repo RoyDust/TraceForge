@@ -8,6 +8,7 @@ const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata = {
   title: "TraceForge Console",
+  robots: { index: false, follow: false },
   description: "AI 网关与 Agent 可观测平台 · 控制面",
 };
 

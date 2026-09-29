@@ -21,12 +21,13 @@ import { Separator } from "@/components/ui/separator";
 import { ConsoleNav } from "@/components/traceforge/console-nav";
 import { SidebarCollapseButton } from "@/components/traceforge/sidebar-collapse-button";
 import { requireAdmin } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { getProjects } from "@/lib/dal";
+import { demoMode } from "@/lib/env";
 import { consoleChromeViewModel } from "@/lib/ui-view-models";
 
 export async function ConsoleShell({ children }: { children: ReactNode }) {
   const session = await requireAdmin();
-  const projects = await prisma.project.findMany({ orderBy: { createdAt: "asc" } }).catch(() => []);
+  const projects = await getProjects();
   const chrome = consoleChromeViewModel(projects);
   const initials = session.email.slice(0, 2).toUpperCase();
 
@@ -79,6 +80,7 @@ export async function ConsoleShell({ children }: { children: ReactNode }) {
             </Badge>
           </div>
           <div className="console-topbar-actions">
+            {demoMode() ? <Badge data-testid="demo-mode">演示模式</Badge> : null}
             <Button variant="outline" size="sm">
               <Clock3 aria-hidden="true" />
               近 24 小时

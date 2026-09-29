@@ -310,6 +310,7 @@ model EvalCase {
 }
 
 model EvalRun {
+  deadlineAt      DateTime? @map("deadline_at")
   id              String   @id @default(uuid()) @db.Uuid
   datasetId       String   @map("dataset_id") @db.Uuid
   promptVersionId String?  @map("prompt_version_id") @db.Uuid

@@ -1,18 +1,6 @@
 import type { Prisma } from "@prisma/client";
-import { mockEnvironment, mockFreshness, mockLiveIngest } from "@/lib/ui-mocks";
-
-type ProjectLike = Prisma.ProjectGetPayload<Record<string, never>>;
-
-export function consoleChromeViewModel(projects: ProjectLike[]) {
-  const seed = projects.map((project) => project.id).join(":") || "traceforge";
-
-  return {
-    projectOptions: projects.map((project) => ({
-      id: project.id,
-      name: project.name,
-    })),
-    liveIngest: mockLiveIngest(seed),
-    freshness: mockFreshness(seed),
-    environment: mockEnvironment(),
-  };
+export function consoleChromeViewModel(projects: Prisma.ProjectGetPayload<Record<string, never>>[]) {
+  return { projectOptions: projects.map(({ id, name }) => ({ id, name })),
+    liveIngest: { value: "未配置采集速率", source: "unavailable" },
+    freshness: { value: "request" }, environment: { value: "Console", source: "config" } };
 }

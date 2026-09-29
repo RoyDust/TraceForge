@@ -1,3 +1,6 @@
+import "server-only";
+import { cache } from "react";
+import { adminConfig } from "@/lib/env";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -10,11 +13,11 @@ export type AdminSession = {
 };
 
 function configuredEmail() {
-  return process.env.ADMIN_EMAIL?.trim() ?? "";
+  return adminConfig().email;
 }
 
 function configuredPasswordHash() {
-  return process.env.ADMIN_PASSWORD_HASH?.trim() ?? "";
+  return adminConfig().passwordHash;
 }
 
 function secret() {
@@ -84,13 +87,14 @@ export async function signOut() {
   store.delete(COOKIE);
 }
 
-export async function getAdminSession(): Promise<AdminSession | null> {
+export const getAdminSession = cache(async (): Promise<AdminSession | null> => {
   const store = await cookies();
+  adminConfig();
   const token = store.get(COOKIE)?.value;
   if (!token) return null;
 
-  const [payload, signature] = token.split(".");
-  if (!payload || !signature || !safeEqual(hmac(payload), signature)) {
+  const [payload, signature, extra] = token.split(".");
+  if (extra || !payload || !signature || !safeEqual(hmac(payload), signature)) {
     return null;
   }
 
@@ -99,7 +103,7 @@ export async function getAdminSession(): Promise<AdminSession | null> {
       email?: string;
       exp?: number;
     };
-    if (!decoded.email || !decoded.exp || decoded.exp < Date.now()) {
+    if (typeof decoded.email !== "string" || typeof decoded.exp !== "number" || !Number.isFinite(decoded.exp) || decoded.exp <= Date.now()) {
       return null;
     }
     if (decoded.email.toLowerCase() !== configuredEmail().toLowerCase()) {
@@ -109,7 +113,7 @@ export async function getAdminSession(): Promise<AdminSession | null> {
   } catch {
     return null;
   }
-}
+});
 
 export async function requireAdmin() {
   const session = await getAdminSession();
@@ -117,4 +121,19 @@ export async function requireAdmin() {
     redirect("/login");
   }
   return session;
+}
+
+// A signed receipt authorizes only this predeclared Run's bounded pending UI.
+export function pendingReceipt(runId: string, deadline: number) {
+  const payload = Buffer.from(JSON.stringify({ runId, deadline })).toString("base64url");
+  return payload + "." + hmac(payload);
+}
+export function readPendingReceipt(token: string | undefined, runId: string): number | null {
+  if (!token || token.length > 512) return null;
+  const [payload, signature, extra] = token.split(".");
+  if (!payload || !signature || extra || !safeEqual(hmac(payload), signature)) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    return decoded.runId === runId && Number.isSafeInteger(decoded.deadline) ? decoded.deadline : null;
+  } catch { return null; }
 }

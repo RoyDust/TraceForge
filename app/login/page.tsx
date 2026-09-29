@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+import { adminConfig, demoMode } from "@/lib/env";
 import { getAdminSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { loginAction } from "./actions";
@@ -6,29 +8,23 @@ type LoginPageProps = {
   searchParams: Promise<{ error?: string }>;
 };
 
-function defaultEmail() {
-  return process.env.ADMIN_EMAIL?.trim() ?? "";
-}
-
-function defaultPassword() {
-  const configured = process.env.ADMIN_PASSWORD_HASH?.trim() ?? "";
-  return configured.startsWith("plain:") ? configured.slice("plain:".length) : "";
-}
-
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const session = await getAdminSession();
   if (session) redirect("/traces");
 
   const params = await searchParams;
   const failed = params.error === "1";
-  const email = defaultEmail();
-  const password = defaultPassword();
+  const demo = demoMode();
+  const config = adminConfig();
+  const email = demo ? config.email : "";
+  const password = demo && config.passwordHash.startsWith("plain:") ? config.passwordHash.slice(6) : "";
 
   return (
     <main className="login-page">
       <section className="login-panel" aria-labelledby="login-title">
         <div>
           <p className="eyebrow">TraceForge 控制台</p>
+          {demo ? <p data-testid="demo-mode">演示模式 · 预置凭据仅供演示</p> : null}
           <h1 id="login-title">登录控制台</h1>
           <p className="muted">查看追踪运行、调用跨度、事件和责任域归因。</p>
         </div>
