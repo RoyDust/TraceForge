@@ -206,7 +206,7 @@ test("Chat browser sends successive messages and opens the matching Trace", asyn
   await page.getByLabel("流式输出", { exact: true }).uncheck();
   let previous: string | null = null;
   for (const content of ["first UI message", "second UI message"]) {
-    await page.getByLabel("消息", { exact: true }).fill(content);
+    await page.getByRole("textbox", { name: "消息", exact: true }).fill(content);
     await page.getByRole("button", { name: "发送消息", exact: true }).click();
     await expect(page.locator(".chat-bubble.assistant").last()).toContainText("hello from mock");
     const href = await page.getByRole("link", { name: "打开追踪运行" }).getAttribute("href");
@@ -225,5 +225,15 @@ test("standalone static assets load and the Dashboard renders completely", async
   const assets = await page.locator('link[rel="stylesheet"], script[src]').evaluateAll((elements) => elements.map((e) => e.getAttribute("href") ?? e.getAttribute("src")).filter((v): v is string => Boolean(v?.startsWith("/_next/static/"))));
   expect(assets.length).toBeGreaterThan(0);
   for (const asset of assets) expect((await page.request.get(asset)).status()).toBe(200);
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    const clipped = await page.locator(".tf-kpi-card").evaluateAll((cards) => cards.filter((card) => {
+      const outer = card.getBoundingClientRect();
+      const value = card.querySelector("strong")!.getBoundingClientRect();
+      return value.bottom > outer.bottom + 1 || value.right > outer.right + 1 || value.left < outer.left - 1;
+    }).length);
+    expect(clipped, "KPI values must fit within their cards at " + viewport.width).toBe(0);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   await testInfo.attach("dashboard-render", { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
 });

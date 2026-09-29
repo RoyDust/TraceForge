@@ -1265,6 +1265,7 @@ pre {
 }
 
 .tf-kpi-strip {
+  flex-shrink: 0;
   display: grid;
   grid-template-columns: repeat(7, minmax(126px, 1fr));
   gap: 0;
@@ -1281,6 +1282,8 @@ pre {
 }
 
 .tf-kpi-card {
+  padding: 0;
+  gap: 0;
   border-radius: 0;
   border: 0;
   border-right: 1px solid var(--line);
@@ -1334,7 +1337,7 @@ pre {
 
 .tf-kpi-content {
   display: grid;
-  grid-template-columns: minmax(0, auto) minmax(72px, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: end;
   gap: 10px;
   padding: 2px 14px 12px;
