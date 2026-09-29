@@ -202,7 +202,7 @@ test("same Prompt Version submission from two tabs allocates only one version", 
 test("Chat browser sends successive messages and opens the matching Trace", async ({ page }) => {
   await login(page);
   await page.goto("/chat");
-  await page.getByLabel("模型", { exact: true }).selectOption("mock-ok");
+  await page.getByRole("combobox", { name: /^模型/ }).selectOption("mock-ok");
   await page.getByLabel("流式输出", { exact: true }).uncheck();
   let previous: string | null = null;
   for (const content of ["first UI message", "second UI message"]) {
