@@ -35,6 +35,7 @@ export default async function ChatPage() {
       {(
         <ChatForm
           hasChatApiKey={hasChatApiKey}
+          defaultModel={process.env.TRACEFORGE_CHAT_MODEL?.trim() || undefined}
           models={models.map((model) => ({
             id: model.id,
             modelName: model.modelName,
