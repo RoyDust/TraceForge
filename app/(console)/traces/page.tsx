@@ -46,7 +46,6 @@ import { cn } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
-type ProjectRow = Prisma.ProjectGetPayload<Record<string, never>>;
 type TraceRunRow = Prisma.TraceRunGetPayload<{
   include: {
     project: true;
@@ -207,13 +206,6 @@ function domainBadge(domain: ResponsibilityDomain | null) {
   );
 }
 
-function groupStats(rows: TraceRunRow[]) {
-  const failed = rows.filter((run) => run.status === TraceStatus.failed || run.status === TraceStatus.cancelled).length;
-  const running = rows.filter((run) => run.status === TraceStatus.running).length;
-  const slow = rows.filter((run) => (run.latencyMs ?? 0) > 3000).length;
-  return { failed, running, slow };
-}
-
 function providerHealth(rows: TraceRunRow[]) {
   const groups = new Map<
     string,
@@ -339,7 +331,7 @@ function selectedSummary(run: TraceRunDetail | null): {
     (current, spanItem) => (!current || duration(spanItem) > duration(current) ? spanItem : current),
     null,
   );
-  const costliest = run.spans.reduce<SpanWithEvents | null>(
+  const costliest = run.spans.filter((span) => span.cost !== null).reduce<SpanWithEvents | null>(
     (current, spanItem) => (!current || costNumber(spanItem) > costNumber(current) ? spanItem : current),
     null,
   );
@@ -374,9 +366,7 @@ export default async function TraceListPage({ searchParams }: { searchParams: Se
   const clauses: Prisma.TraceRunWhereInput[] = [];
   if (filters.projectId) clauses.push({ projectId: filters.projectId });
   if (filters.promptId) clauses.push({ promptVersion: { promptId: filters.promptId } });
-  if (filters.status && STATUS_OPTIONS.has(filters.status)) clauses.push({ status: filters.status as TraceStatus });
   if (filters.errorCode) clauses.push({ errorCode: filters.errorCode });
-  if (filters.slow === "1") clauses.push({ latencyMs: { gt: 3000 } });
   if (filters.from || filters.to) clauses.push({ startedAt: dayRange(filters.from, filters.to) });
   if (filters.model) {
     const contains = { contains: filters.model, mode: "insensitive" as const };
@@ -394,13 +384,17 @@ export default async function TraceListPage({ searchParams }: { searchParams: Se
     });
   }
 
-  const where: Prisma.TraceRunWhereInput = clauses.length ? { AND: clauses } : {};
-  let rows: TraceRunRow[] = [];
-  let total = 0;
-  let projects: ProjectRow[] = [];
+  // Group counts share the non-group filters and are independent of pagination.
+  const groupWhere: Prisma.TraceRunWhereInput = { AND: [...clauses] };
+  const failedWhere: Prisma.TraceRunWhereInput = { status: { in: [TraceStatus.failed, TraceStatus.cancelled] } };
+  if (filters.status && STATUS_OPTIONS.has(filters.status)) {
+    clauses.push(filters.status === "failed" ? failedWhere : { status: filters.status as TraceStatus });
+  }
+  if (filters.slow === "1") clauses.push({ latencyMs: { gt: 3000 } });
+  const where: Prisma.TraceRunWhereInput = { AND: clauses };
   let selectedRun: TraceRunDetail | null = null;
 
-  [rows, total, projects] = await Promise.all([
+  const [rows, total, projects, all, failed, running, slow] = await prisma.$transaction([
     prisma.traceRun.findMany({
       where,
       orderBy: { startedAt: "desc" },
@@ -426,7 +420,11 @@ export default async function TraceListPage({ searchParams }: { searchParams: Se
     }),
     prisma.traceRun.count({ where }),
     prisma.project.findMany({ orderBy: { createdAt: "asc" } }),
-  ]);
+    prisma.traceRun.count({ where: groupWhere }),
+    prisma.traceRun.count({ where: { AND: [groupWhere, failedWhere] } }),
+    prisma.traceRun.count({ where: { AND: [groupWhere, { status: TraceStatus.running }] } }),
+    prisma.traceRun.count({ where: { AND: [groupWhere, { latencyMs: { gt: 3000 } }] } }),
+  ], { isolationLevel: "RepeatableRead" });
 
   const selectedId =
     filters.run ??
@@ -461,7 +459,7 @@ export default async function TraceListPage({ searchParams }: { searchParams: Se
     promptId: filters.promptId,
   };
   const hasNext = page * PAGE_SIZE < total;
-  const stats = groupStats(rows);
+  const stats = { all, failed, running, slow };
   const summary = selectedSummary(selectedRun);
   const queueRows = [...rows].sort((left, right) => {
     if (left.id === selectedRun?.id) return -1;
@@ -515,7 +513,7 @@ export default async function TraceListPage({ searchParams }: { searchParams: Se
           <CardContent className="tf-run-queue-body">
             <nav className="tf-run-tabs" aria-label="追踪运行分组">
               <Link className={cn(!filters.status && filters.slow !== "1" && "active")} href={buildQuery(baseQuery, { status: null, slow: null, page: 1 })}>
-                全部 <span>{formatNumber(total || rows.length)}</span>
+                全部 <span>{formatNumber(stats.all)}</span>
               </Link>
               <Link className={cn(filters.status === "failed" && "active failed")} href={buildQuery(baseQuery, { status: "failed", slow: null, page: 1 })}>
                 失败 <span>{formatNumber(stats.failed)}</span>
@@ -652,7 +650,7 @@ export default async function TraceListPage({ searchParams }: { searchParams: Se
                   </div>
                   <div>
                     <small>总成本</small>
-                    <strong>${formatMoney(selectedRun.cost)}</strong>
+                    <strong>{selectedRun.cost === null ? "—" : `$${formatMoney(selectedRun.cost)}`}</strong>
                   </div>
                   <div>
                     <small>提示词</small>
@@ -758,7 +756,7 @@ export default async function TraceListPage({ searchParams }: { searchParams: Se
                                 </TableCell>
                                 <TableCell>{formatMs(span.latencyMs)}</TableCell>
                                 <TableCell>{formatNumber((span.promptTokens ?? 0) + (span.completionTokens ?? 0))}</TableCell>
-                                <TableCell>${formatMoney(span.cost)}</TableCell>
+                                <TableCell>{span.cost === null ? "—" : `$${formatMoney(span.cost)}`}</TableCell>
                               </TableRow>
                             );
                           })
@@ -794,19 +792,19 @@ export default async function TraceListPage({ searchParams }: { searchParams: Se
                 <ShieldAlert aria-hidden="true" />
                 <div>
                   <span>责任域</span>
-                  <strong>{domainBadge(summary?.domain ?? null) ?? "模型"}</strong>
-                  <p>{responsibilityDescription(summary?.domain ?? null)}</p>
+                  <strong>{summary ? domainBadge(summary.domain) ?? "—" : "无选中运行"}</strong>
+                  <p>{!summary ? "选择一条追踪运行后查看治理信息。" : summary.errorCode ? responsibilityDescription(summary.domain) : "本次运行未记录错误。"}</p>
                 </div>
               </section>
 
               <section className="tf-rail-facts">
                 <div>
                   <small>错误</small>
-                  <Badge variant="destructive">{summary?.errorCode ?? "无"}</Badge>
+                  <Badge variant={summary?.errorCode ? "destructive" : "secondary"}>{summary ? summary.errorCode ?? "无" : "—"}</Badge>
                 </div>
                 <div>
                   <small>HTTP 状态</small>
-                  <strong>{httpStatusFor(summary?.errorCode)}</strong>
+                  <strong>{summary && (summary.errorCode || selectedRun?.status === TraceStatus.success) ? httpStatusFor(summary.errorCode) : "—"}</strong>
                 </div>
                 <div>
                   <small>提示词</small>
@@ -829,7 +827,7 @@ export default async function TraceListPage({ searchParams }: { searchParams: Se
                 </div>
                 <div className="tf-rail-events">
                   {fallbackRows.length === 0 ? (
-                    <p>选中运行没有备用切换事件。</p>
+                    <p>{selectedRun ? "选中运行没有备用切换事件。" : "无选中运行。"}</p>
                   ) : (
                     fallbackRows.map(({ span, event }) => (
                       <div key={event.id}>
@@ -877,13 +875,13 @@ export default async function TraceListPage({ searchParams }: { searchParams: Se
                   <AlertTriangle aria-hidden="true" />
                   <span>最慢调用跨度</span>
                   <strong>{summary?.slowest ? formatMs(duration(summary.slowest)) : "—"}</strong>
-                  <small>{summary?.slowest?.name ?? "无调用跨度"}</small>
+                  <small>{summary?.slowest?.name ?? (selectedRun ? "无调用跨度" : "无选中运行")}</small>
                 </div>
                 <div>
                   <Copy aria-hidden="true" />
                   <span>最高成本跨度</span>
                   <strong>{summary?.costliest ? `$${formatMoney(summary.costliest.cost)}` : "—"}</strong>
-                  <small>{summary?.costliest?.name ?? "无调用跨度"}</small>
+                  <small>{summary?.costliest?.name ?? (selectedRun ? "无已知成本跨度" : "无选中运行")}</small>
                 </div>
               </section>
 
@@ -894,7 +892,7 @@ export default async function TraceListPage({ searchParams }: { searchParams: Se
                 </div>
                 <div className="tf-reason-list">
                   {selectedRun?.spans.filter((span) => span.errorCode === "stream_interrupted").map((span) => <div key={span.id}><span>{reasonLabel(span.errorCode!)}</span><strong>{span.name}</strong></div>)}
-                  {!selectedRun?.spans.some((span) => span.errorCode === "stream_interrupted") ? <p>选中运行无流式中断记录。</p> : null}
+                  {!selectedRun?.spans.some((span) => span.errorCode === "stream_interrupted") ? <p>{selectedRun ? "选中运行无流式中断记录。" : "无选中运行。"}</p> : null}
                 </div>
               </section>
             </CardContent>

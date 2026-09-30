@@ -69,6 +69,87 @@ test("Shanghai date filtering and multi-span aggregates agree with a known fixtu
   await expect(page.getByText("boundary-3", { exact: true })).toHaveCount(0);
 });
 
+test("Trace group counts cover every page and preserve shared filters across groups", async ({ page }) => {
+  const project = await db.project.create({ data: { name: "Trace group count fixture" } });
+  const start = new Date("2002-01-01T12:00:00Z");
+  await db.traceRun.createMany({ data: Array.from({ length: 23 }, (_, i) => ({
+    projectId: project.id, name: "count-fixture-" + i,
+    startedAt: new Date(start.getTime() - i * 1000),
+    status: i === 18 || i === 19 ? "failed" as const : i === 20 ? "cancelled" as const : i === 21 ? "running" as const : "success" as const,
+    latencyMs: i >= 18 ? 4000 : 100,
+  })) });
+  await db.traceRun.createMany({ data: [
+    { projectId: project.id, name: "count-fixture-outside-date", startedAt: new Date("2002-01-02T12:00:00Z"), status: "failed" },
+    { projectId: project.id, name: "unmatched-name", startedAt: start, status: "failed" },
+  ] });
+  await login(page);
+  const query = "/traces?projectId=" + project.id + "&from=2002-01-01&to=2002-01-01&model=count-fixture";
+  const groups = page.getByRole("navigation", { name: "追踪运行分组" });
+  for (const [suffix, count] of [["", 23], ["&page=2", 23], ["&status=failed", 3], ["&status=running", 1], ["&slow=1", 5]] as const) {
+    await page.goto(query + suffix);
+    for (const label of ["全部 23", "失败 3", "运行中 1", "慢请求 5"]) {
+      await expect(groups.getByRole("link", { name: label, exact: true })).toBeVisible();
+    }
+    await expect(page.locator(".tf-run-queue").getByText(count + " 条运行", { exact: true })).toBeVisible();
+  }
+  await groups.getByRole("link", { name: "失败 3", exact: true }).click();
+  await expect(page.getByRole("link", { name: /已取消.*count-fixture-20/ })).toBeVisible();
+});
+
+test("unknown costs remain unknown in aggregates and never receive highest-cost badges", async ({ page }) => {
+  const project = await db.project.create({ data: { name: "Unknown cost fixture" } });
+  const startedAt = new Date("2002-02-01T00:00:00Z");
+  for (const [model, cost] of [["mixed-cost-fixture", "0.1"], ["zero-cost-fixture", "0"]]) {
+    await db.traceRun.create({ data: { projectId: project.id, name: model, startedAt, status: "success", cost, spans: { create: { type: "llm", name: model, provider: "mock", model, cost, status: "success", startedAt } } } });
+  }
+  await login(page);
+  const dashboard = "/dashboard?projectId=" + project.id + "&from=2002-02-01&to=2002-02-01";
+  const costKpi = page.locator(".tf-kpi-card").filter({ hasText: "成本" }).locator("strong");
+  await page.goto(dashboard);
+  await expect(costKpi).toHaveText("$0.100000");
+  const unknown = await db.traceRun.create({ data: { projectId: project.id, name: "unknown-cost-run", startedAt, status: "success", spans: { create: { type: "llm", name: "unknown-priced-span", provider: "mock", model: "mixed-cost-fixture", cost: null, status: "success", startedAt } } } });
+  await page.reload();
+  await expect(costKpi).toHaveText("—");
+  await expect(page.getByRole("status")).toContainText("成本合计及占比暂不展示");
+  const mixed = page.getByRole("row").filter({ has: page.getByRole("cell", { name: "mixed-cost-fixture", exact: true }) });
+  await expect(mixed.getByRole("cell").nth(3)).toHaveText("—");
+  await expect(mixed.getByRole("cell").nth(4)).toHaveText("—");
+  const zero = page.getByRole("row").filter({ has: page.getByRole("cell", { name: "zero-cost-fixture", exact: true }) });
+  await expect(zero.getByRole("cell").nth(3)).toHaveText("$0");
+  await expect(zero.getByRole("cell").nth(4)).toHaveText("—");
+  for (const path of ["/traces?projectId=" + project.id + "&run=" + unknown.id, "/traces/" + unknown.id]) {
+    await page.goto(path);
+    await expect(page.getByText("调用树", { exact: true })).toBeVisible();
+    await expect(page.getByText("最高成本", { exact: true })).toHaveCount(0);
+  }
+  await db.traceSpan.create({ data: { runId: unknown.id, type: "llm", name: "zero-priced-span", status: "success", cost: "0", startedAt: new Date(startedAt.getTime() + 1000) } });
+  await page.reload();
+  await expect(page.locator("summary").filter({ hasText: "zero-priced-span" }).getByText("最高成本", { exact: true })).toBeVisible();
+  await expect(page.locator("summary").filter({ hasText: "unknown-priced-span" }).getByText("最高成本", { exact: true })).toHaveCount(0);
+  await page.goto("/traces?projectId=" + project.id + "&run=" + unknown.id);
+  await expect(page.getByRole("row").filter({ hasText: "zero-priced-span" }).getByText("最高成本", { exact: true })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "unknown-priced-span" }).getByText("最高成本", { exact: true })).toHaveCount(0);
+});
+
+test("Trace empty and running states do not fabricate responsibility or HTTP success", async ({ page }) => {
+  const project = await db.project.create({ data: { name: "Empty governance fixture" } });
+  await login(page);
+  await page.goto("/traces?projectId=" + project.id);
+  const rail = page.locator(".tf-incident-rail");
+  const http = rail.locator(".tf-rail-facts > div").filter({ hasText: "HTTP 状态" }).locator("strong");
+  await expect(page.getByText("没有匹配的追踪运行", { exact: true })).toBeVisible();
+  await expect(rail.locator(".tf-rail-callout strong")).toHaveText("无选中运行");
+  await expect(http).toHaveText("—");
+  await expect(rail.getByText("200 正常", { exact: true })).toHaveCount(0);
+  const run = await db.traceRun.create({ data: { projectId: project.id, name: "running-without-result", status: "running" } });
+  await page.reload();
+  await expect(rail.locator(".tf-rail-callout strong")).toHaveText("—");
+  await expect(http).toHaveText("—");
+  await db.traceRun.update({ where: { id: run.id }, data: { status: "success" } });
+  await page.reload();
+  await expect(http).toHaveText("200 正常");
+});
+
 test("Eval enforces sample cap and validates Prompt project ownership before creating a Run", async ({ page }) => {
   const projectId = randomUUID();
   const oversized = await db.evalDataset.create({ data: { project: { create: { id: projectId, name: "Eval boundaries" } }, name: "Too many cases", cases: { create: Array.from({ length: 4 }, (_, i) => ({ input: "sample-" + i, assertionType: "exact_match" as const, expectedOutput: "hello from mock", tags: [] })) } } });

@@ -366,7 +366,7 @@ export default async function TraceDetailPage({
     (current, span) => (!current || duration(span) > duration(current) ? span : current),
     null,
   );
-  const costliest = run.spans.reduce<SpanWithEvents | null>(
+  const costliest = run.spans.filter((span) => span.cost !== null).reduce<SpanWithEvents | null>(
     (current, span) => (!current || costNumber(span) > costNumber(current) ? span : current),
     null,
   );
