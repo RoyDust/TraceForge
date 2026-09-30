@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { ActionForm } from "@/components/traceforge/action-form";
+import {
+  ActionForm,
+  CreateActionDialog,
+} from "@/components/traceforge/action-form";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { formatDate, formatNumber } from "@/lib/format";
@@ -22,16 +25,31 @@ function one(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-export default async function PromptsPage({ searchParams }: { searchParams: SearchParams }) {
+export default async function PromptsPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
   const prisma = await getConsoleDb();
   const rawParams = await searchParams;
   const projectId = one(rawParams.projectId)?.trim();
+  const q = one(rawParams.q)?.trim() ?? "";
   let prompts: PromptRow[] = [];
   let projects: ProjectRow[] = [];
 
   [prompts, projects] = await Promise.all([
     prisma.prompt.findMany({
-      where: projectId ? { projectId } : {},
+      where: {
+        ...(projectId ? { projectId } : {}),
+        ...(q
+          ? {
+              OR: [
+                { name: { contains: q, mode: "insensitive" } },
+                { description: { contains: q, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      },
       include: {
         project: true,
         activeVersion: true,
@@ -43,17 +61,61 @@ export default async function PromptsPage({ searchParams }: { searchParams: Sear
   ]);
 
   return (
-    <main>
+    <main className="tf-library-page">
       <header className="page-head">
         <div>
-          <p className="eyebrow">PROMPT LIBRARY</p>
           <h1>提示词版本管理</h1>
-          <p className="muted">把提示词改动固化成版本快照，支持差异对比、发布和回滚。</p>
+          <p className="muted">
+            把提示词改动固化成版本快照，支持差异对比、发布和回滚。
+          </p>
         </div>
-        <span className="badge">{formatNumber(prompts.length)} 个提示词</span>
+        <CreateActionDialog
+          title="创建提示词"
+          trigger="新建提示词"
+          description="创建后会发布初始版本 v1，后续修改保留完整版本记录。"
+        >
+          <ActionForm className="stack-form" action={createPromptAction}>
+            <input type="hidden" name="requestId" value={randomUUID()} />
+            <label>
+              项目
+              <select
+                name="projectId"
+                required
+                defaultValue={projectId ?? projects[0]?.id ?? ""}
+              >
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              名称
+              <input name="name" required placeholder="写作系统" />
+            </label>
+            <label>
+              描述
+              <input name="description" placeholder="用途、调用场景或负责人" />
+            </label>
+            <label>
+              初始内容
+              <textarea
+                name="content"
+                required
+                rows={8}
+                placeholder="你是..."
+              />
+            </label>
+            <button type="submit">创建并发布 v1</button>
+          </ActionForm>
+        </CreateActionDialog>
       </header>
 
-      <form className="filter-form prompt-filter" method="get">
+      <form
+        className="filter-form prompt-filter tf-library-filter"
+        method="get"
+      >
         <label>
           项目
           <select name="projectId" defaultValue={projectId ?? ""}>
@@ -65,6 +127,16 @@ export default async function PromptsPage({ searchParams }: { searchParams: Sear
             ))}
           </select>
         </label>
+        <label>
+          搜索
+          <input
+            type="search"
+            name="q"
+            defaultValue={q}
+            placeholder="搜索提示词名称或描述"
+            aria-label="搜索提示词"
+          />
+        </label>
         <div className="filter-actions">
           <button type="submit">筛选</button>
           <Link className="button secondary" href="/prompts">
@@ -73,19 +145,28 @@ export default async function PromptsPage({ searchParams }: { searchParams: Sear
         </div>
       </form>
 
-      {(
-        <div className="detail-grid">
+      {
+        <div className="tf-library-content">
           <section className="section">
             <div className="section-heading">
               <div>
-                <h2>提示词列表</h2>
-                <p className="muted">当前现行版本是线上指针；历史版本保持不可变。</p>
+                <h2>
+                  提示词列表{" "}
+                  <span className="tf-count">
+                    {formatNumber(prompts.length)}
+                  </span>
+                </h2>
+                <p className="muted">
+                  当前现行版本是线上指针；历史版本保持不可变。
+                </p>
               </div>
             </div>
             {prompts.length === 0 ? (
               <div className="empty-state">
-                <h3>还没有提示词</h3>
-                <p className="muted">运行 `node scripts/stage5-demo.mjs` 生成多版本样例，或直接在右侧创建。</p>
+                <h3>{q || projectId ? "没有匹配的提示词" : "还没有提示词"}</h3>
+                <p className="muted">
+                  调整搜索或项目条件，或点击“新建提示词”开始。
+                </p>
               </div>
             ) : (
               <div className="table-wrap">
@@ -104,14 +185,27 @@ export default async function PromptsPage({ searchParams }: { searchParams: Sear
                       <tr key={prompt.id}>
                         <td>
                           <div className="meta-stack">
-                            <Link className="row-link" href={`/prompts/${prompt.id}`}>
+                            <Link
+                              className="row-link"
+                              href={`/prompts/${prompt.id}`}
+                            >
                               {prompt.name}
                             </Link>
-                            <small className="muted">{prompt.description ?? "—"}</small>
+                            <small className="muted">
+                              {prompt.description ?? "—"}
+                            </small>
                           </div>
                         </td>
                         <td>{prompt.project.name}</td>
-                        <td>{prompt.activeVersion ? <span className="badge provider">v{prompt.activeVersion.version}</span> : "—"}</td>
+                        <td>
+                          {prompt.activeVersion ? (
+                            <span className="badge provider">
+                              v{prompt.activeVersion.version}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
                         <td>{formatNumber(prompt.versions.length)}</td>
                         <td>{formatDate(prompt.createdAt)}</td>
                       </tr>
@@ -121,39 +215,8 @@ export default async function PromptsPage({ searchParams }: { searchParams: Sear
               </div>
             )}
           </section>
-
-          <aside className="section">
-            <section className="section-band">
-              <h2>创建提示词</h2>
-              <ActionForm className="stack-form" action={createPromptAction}><input type="hidden" name="requestId" value={randomUUID()} />
-                <label>
-                  项目
-                  <select name="projectId" required defaultValue={projectId ?? projects[0]?.id ?? ""}>
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  名称
-                  <input name="name" required placeholder="写作系统" />
-                </label>
-                <label>
-                  描述
-                  <input name="description" placeholder="用途、调用场景或负责人" />
-                </label>
-                <label>
-                  初始内容
-                  <textarea name="content" required rows={8} placeholder="你是..." />
-                </label>
-                <button type="submit">创建并发布 v1</button>
-              </ActionForm>
-            </section>
-          </aside>
         </div>
-      )}
+      }
     </main>
   );
 }

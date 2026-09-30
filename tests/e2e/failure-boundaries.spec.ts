@@ -35,6 +35,7 @@ test("Prompt activation failure rolls back the entire create operation", async (
   await db.$executeRawUnsafe("CREATE TRIGGER reject_test_prompt_activation BEFORE UPDATE ON prompt FOR EACH ROW WHEN (NEW.name = 'rollback-e2e') EXECUTE FUNCTION reject_test_prompt_activation()");
   try {
     await page.goto("/prompts");
+    await page.getByRole("button", { name: "新建提示词", exact: true }).click();
     const form = page.locator("form").filter({ has: page.locator('input[name="name"]') }).first();
     await form.locator('[name="projectId"]').selectOption("00000000-0000-0000-0000-000000000001");
     await form.locator('[name="name"]').fill("rollback-e2e");
@@ -340,4 +341,57 @@ test("Dashboard aggregates 2000 Runs and 4000 Spans while bounding displayed det
   const evidence = { runs: 2000, spans: 4000, range: "2002-01-01–2002-01-14 Asia/Shanghai", browserMs, displayedRuns: 9, representativeSummaryPlan: plan };
   console.log("Dashboard scale evidence: " + JSON.stringify(evidence));
   await testInfo.attach("dashboard-scale-evidence", { body: JSON.stringify(evidence, null, 2), contentType: "application/json" });
+});
+
+test("usage tabs preserve unknown latency and day drilldown keeps project scope", async ({ page }) => {
+  const project = await db.project.create({ data: { name: "Usage UI fixture" } });
+  for (const day of ["2026-01-01", "2026-01-03"]) {
+    await db.traceRun.create({ data: { projectId: project.id, name: "usage-ui-" + day, startedAt: new Date(day + "T02:00:00Z"), status: "success", cost: "0", latencyMs: 120, spans: { create: { type: "llm", name: "call", promptTokens: 10, completionTokens: 5, status: "success" } } } });
+  }
+  await login(page);
+  await page.goto("/dashboard?projectId=" + project.id + "&from=2026-01-01&to=2026-01-03");
+  await page.getByRole("tab", { name: "Token", exact: true }).click();
+  await expect(page.getByRole("link", { name: /2026-01-01 · Token 15 个/ })).toBeVisible();
+  await page.getByRole("tab", { name: "Token", exact: true }).press("ArrowRight");
+  await expect(page.getByRole("tab", { name: "P95 延迟", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("link", { name: /2026-01-02 · P95 延迟 —/ })).toBeVisible();
+  await page.getByRole("tab", { name: "请求量", exact: true }).click();
+  await page.getByRole("link", { name: /2026-01-01 · 请求量 1 次/ }).click();
+  await expect(page).toHaveURL(/\/traces\?/);
+  const drilldown = new URL(page.url());
+  expect(drilldown.searchParams.get("projectId")).toBe(project.id);
+  expect(drilldown.searchParams.get("from")).toBe("2026-01-01");
+  expect(drilldown.searchParams.get("to")).toBe("2026-01-01");
+  await expect(page.getByRole("link", { name: /usage-ui-2026-01-01/ })).toHaveCount(1);
+  await page.goto("/dashboard?projectId=" + project.id);
+  await page.getByRole("link", { name: "近 30 天", exact: true }).click();
+  expect(new URL(page.url()).searchParams.get("projectId")).toBe(project.id);
+  await expect(page.getByRole("link", { name: "近 30 天", exact: true })).toHaveAttribute("aria-current", "date");
+});
+
+test("library search and creation drawers work with keyboard and project scope", async ({ page }) => {
+  const project = await db.project.create({ data: { name: "Library UI fixture" } });
+  await db.prompt.create({ data: { projectId: project.id, name: "Library-Needle-Prompt", description: "Searchable prompt" } });
+  await db.evalDataset.create({ data: { projectId: project.id, name: "Library-Needle-Dataset", description: "Searchable dataset" } });
+  await login(page);
+  for (const [path, label, item] of [["prompts", "提示词", "Prompt"], ["evals", "数据集", "Dataset"]]) {
+    await page.goto("/" + path + "?projectId=" + project.id);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.getByRole("searchbox", { name: "搜索" + label, exact: true }).fill("LIBRARY-NEEDLE");
+    await page.getByRole("searchbox", { name: "搜索" + label, exact: true }).press("Enter");
+    await expect(page.getByRole("link", { name: "Library-Needle-" + item, exact: true })).toBeVisible();
+    const trigger = page.getByRole("button", { name: "新建" + label, exact: true });
+    await trigger.press("Enter");
+    const dialog = page.getByRole("dialog", { name: "创建" + label, exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('select[name="projectId"]')).toHaveValue(project.id);
+    await dialog.getByRole("textbox", { name: "名称", exact: true }).fill("unsaved draft");
+    await dialog.getByRole("textbox", { name: "名称", exact: true }).press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await page.getByRole("searchbox", { name: "搜索" + label, exact: true }).fill("no-matching-library-item");
+    await page.getByRole("searchbox", { name: "搜索" + label, exact: true }).press("Enter");
+    await expect(page.getByRole("heading", { name: "没有匹配的" + label, exact: true })).toBeVisible();
+    expect(new URL(page.url()).searchParams.get("projectId")).toBe(project.id);
+  }
 });

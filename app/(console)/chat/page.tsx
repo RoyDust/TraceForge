@@ -25,14 +25,15 @@ export default async function ChatPage() {
     <main className="chat-page">
       <header className="page-head">
         <div>
-          <p className="eyebrow">PLAYGROUND</p>
           <h1>对话测试</h1>
-          <p className="muted">发送一次真实请求，同步查看延迟、用量和运行证据。</p>
+          <p className="muted">
+            发送一次真实请求，同步查看延迟、用量和运行证据。
+          </p>
         </div>
         <span className="badge">{models.length} 个可用模型</span>
       </header>
 
-      {(
+      {
         <ChatForm
           hasChatApiKey={hasChatApiKey}
           defaultModel={process.env.TRACEFORGE_CHAT_MODEL?.trim() || undefined}
@@ -43,7 +44,7 @@ export default async function ChatPage() {
             providerName: model.provider.name,
           }))}
         />
-      )}
+      }
     </main>
   );
 }

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { ArrowRight, Layers3, LogOut, Search, Workflow } from "lucide-react";
+import { ArrowRight, BookOpen, LogOut, Search, Workflow } from "lucide-react";
 import { logoutAction } from "@/app/actions";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,10 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
-import { ConsoleNav } from "@/components/traceforge/console-nav";
+import {
+  ConsoleBreadcrumb,
+  ConsoleNav,
+} from "@/components/traceforge/console-nav";
 import { SidebarCollapseButton } from "@/components/traceforge/sidebar-collapse-button";
 import { requireAdmin } from "@/lib/auth";
 import { getProjects } from "@/lib/dal";
@@ -36,11 +39,18 @@ export async function ConsoleShell({ children }: { children: ReactNode }) {
             <small>AI 可观测工作台</small>
           </span>
         </Link>
-        <div className="sidebar-section-label">工作空间</div>
         <ConsoleNav />
         <div className="sidebar-footer">
           <SidebarCollapseButton />
-          <small title={session.email}>{session.email}</small>
+          <div className="sidebar-account">
+            <Avatar size="sm">
+              <AvatarFallback>{initials}</AvatarFallback>
+            </Avatar>
+            <div>
+              <strong>管理员</strong>
+              <small title={session.email}>{session.email}</small>
+            </div>
+          </div>
           <form action={logoutAction}>
             <Button
               className="link-button"
@@ -56,12 +66,7 @@ export async function ConsoleShell({ children }: { children: ReactNode }) {
       </aside>
       <div className="console-main">
         <header className="console-topbar">
-          <div className="console-workspace">
-            <Layers3 size={16} aria-hidden="true" />
-            <span>工作空间</span>
-            <span className="muted">/</span>
-            <strong>Console</strong>
-          </div>
+          <ConsoleBreadcrumb />
           <form
             className="console-search"
             action="/traces"
@@ -101,9 +106,16 @@ export async function ConsoleShell({ children }: { children: ReactNode }) {
                 演示模式
               </Badge>
             ) : null}
-            <Avatar size="sm" title={session.email}>
-              <AvatarFallback>{initials}</AvatarFallback>
-            </Avatar>
+            <a
+              className="console-docs"
+              aria-label="项目文档（新窗口）"
+              href="https://github.com/RoyDust/TraceForge#readme"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <BookOpen size={16} aria-hidden="true" />
+              <span>文档</span>
+            </a>
           </div>
         </header>
         <div className="console-content">{children}</div>

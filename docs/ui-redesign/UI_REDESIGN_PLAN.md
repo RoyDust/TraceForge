@@ -41,3 +41,48 @@
 - [提示词版本详情](screenshots/prompt-detail-1440.png)
 
 本次没有执行公网部署，也没有新增价格或团队权限能力；这些边界见当前功能 PRD。
+
+## 第二轮：管理工作台完善（2026-09-30）
+
+参考已核验的官方源码：sub2api 的分组导航、紧凑统计与范围筛选，以及 CPA Management Center 的运行摘要、流量主视图与操作入口。只借鉴信息组织，不引入账户充值、凭证管理等现有产品没有的能力。
+
+- [x] 导航按监控/开发分组，突出当前位置，统一顶栏、账号区与可折叠侧栏。
+- [x] 看板调整为范围工具栏、核心指标、可切换用量图、异常摘要与运行明细；增加今天/7天/30天快捷筛选和按日下钻。
+- [x] Prompt/Eval 列表优先展示内容，创建表单按需打开；完善搜索与空态。
+- [x] 统一细节页面与 Chat 的操作密度，清理旧样式覆盖。
+- [x] 回归测试、桌面/窄屏浏览器验收、截图，提交并同步现有分支。
+
+设计：石墨色侧栏、浅灰画布、白色内容面板、蓝色主操作。以表格和分隔线组织密集数据，减少同权重卡片；正文 14px、标题 28px、关键数字 30px，沿用 Geist 与中文系统字体。图表只使用当前范围的真实每日汇总；缺失价格保留未知，不显示无依据的实时状态或趋势。
+
+参考：
+- https://github.com/Wei-Shaw/sub2api/blob/main/frontend/src/components/layout/AppSidebar.vue
+- https://github.com/Wei-Shaw/sub2api/blob/main/frontend/src/views/admin/DashboardView.vue
+- https://github.com/router-for-me/Cli-Proxy-API-Management-Center/blob/main/src/features/dashboard/DashboardPage.tsx
+
+
+### 第二轮浏览器验收
+
+- 桌面 1440px：看板、Trace、Prompt、Eval、Chat 均实测；主操作对比度、侧栏折叠、图表键盘切换通过。
+- 看板 980px 与全部五页 390px：文档宽度不超过视口；五个导航入口完整，图表/表格在自己的容器内滚动。
+- 按日下钻保留当天起止日期；提示词搜索 demo-support 返回现有的一条记录；抽屉 Escape 关闭与焦点返回由 E2E 覆盖。
+- 手机创建面板位于视口内；聊天初次进入 scrollY=0，对话显示在运行指标之前。
+- 所有图片来自本地真实页面。本轮没有发送新的付费模型请求、发布提示词或执行已有评测。
+
+补充截图：
+- [提示词列表](screenshots/prompts-1440.png)
+- [评测列表](screenshots/evals-1440.png)
+- [手机对话](screenshots/chat-390.png)
+- [手机创建面板](screenshots/prompt-create-390.png)
+
+
+### 第二轮最终自动化结果（2026-09-30）
+
+| 检查 | 结果 |
+| --- | --- |
+| TypeScript / ESLint | 通过 |
+| 生产构建 | 通过，本地 3000 端口已更新到新版 |
+| 单元测试 | 9 / 9 通过 |
+| 完整 E2E | 46 / 46 通过，含新增图表/抽屉交互 |
+| 浏览器尺寸 | 1440 / 980 / 390px 验证通过 |
+
+修复验收中发现的图表方向键激活、主按钮文字对比度、初次进入 Chat 的自动滚动；新增下钻测试等待导航完成后再核对日期，避免读取旧 URL。所有 E2E 使用隔离 schema 与 mock upstream，结束后清理。

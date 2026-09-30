@@ -4,6 +4,8 @@ AI 网关与 Agent 可观测控制台。Rust Gateway 代理 OpenAI-compatible �
 
 当前功能基线见 [当前功能 PRD](TraceForge_AI网关与Agent可观测平台_PRD.md)，本轮前端规范见 [Base UI 重构 PRD](docs/ui-redesign/UI_REDESIGN_PRD.md)。
 
+控制台支持分组导航、近 7 天默认看板、请求/Token/P95 趋势切换与按日下钻；提示词和评测列表支持搜索及按需创建。界面验收记录见 [执行计划](docs/ui-redesign/UI_REDESIGN_PLAN.md)。
+
 ## 当前能力（2026-09-30）
 
 - **治理看板**：请求量、失败率、P95、Token、成本、日趋势、模型/供应商、限流、fallback 与流式错误，全部读取持久化数据。最近列表最多 9 个 Run，统计不受列表限制。

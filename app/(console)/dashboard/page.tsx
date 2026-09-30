@@ -1,6 +1,15 @@
 import Link from "next/link";
 import { TraceStatus, type Prisma } from "@prisma/client";
-import { ArrowUpRight, CalendarDays, RefreshCw } from "lucide-react";
+import {
+  Activity,
+  ArrowUpRight,
+  CalendarDays,
+  CircleAlert,
+  Clock3,
+  Coins,
+  RefreshCw,
+  type LucideIcon,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +40,10 @@ import {
   formatNumber,
   formatPercent,
 } from "@/lib/format";
+import {
+  UsageChart,
+  type UsagePoint,
+} from "@/components/traceforge/usage-chart";
 import { getDashboardData } from "@/lib/dashboard";
 import { shanghaiDay } from "@/lib/format";
 import { ratio } from "@/lib/ui-metrics";
@@ -71,7 +84,7 @@ function one(value: string | string[] | undefined) {
 }
 
 function defaultFrom() {
-  return shanghaiDay(new Date(Date.now() - 13 * 86400000));
+  return shanghaiDay(new Date(Date.now() - 6 * 86400000));
 }
 
 function buildQuery(
@@ -141,61 +154,30 @@ function presentRun(run: DashboardRun): RunPresentation {
   };
 }
 
-function Sparkline({
-  points,
-  tone = "ok",
-}: {
-  points: number[];
-  tone?: "ok" | "danger" | "warning" | "neutral";
-}) {
-  if (points.length < 2) return <small className="muted">暂无趋势</small>;
-  const max = Math.max(...points),
-    min = Math.min(...points);
-  const coords = points
-    .map(
-      (v, i) =>
-        ((i / (points.length - 1)) * 128).toFixed(1) +
-        "," +
-        (34 - ((v - min) / Math.max(max - min, 1)) * 28).toFixed(1),
-    )
-    .join(" ");
-  return (
-    <svg
-      className={"tf-sparkline " + tone}
-      viewBox="0 0 128 40"
-      role="img"
-      aria-label="趋势"
-    >
-      <polyline
-        points={coords}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-      />
-    </svg>
-  );
-}
 function KpiTile({
   label,
   value,
-  points,
-  tone = "ok",
+  hint,
+  icon: Icon,
+  tone = "neutral",
 }: {
   label: string;
   value: string;
-  points: number[];
-  tone?: "ok" | "danger" | "warning" | "neutral";
+  hint: string;
+  icon?: LucideIcon;
+  tone?: "neutral" | "danger";
 }) {
   return (
-    <Card className="tf-kpi-card" size="sm" data-source="database">
-      <CardHeader className="tf-kpi-head">
-        <CardDescription>{label}</CardDescription>
-      </CardHeader>
-      <CardContent className="tf-kpi-content">
+    <div className={"tf-kpi-card " + tone} data-source="database">
+      <div className="tf-kpi-head">
+        <span>{label}</span>
+        {Icon ? <Icon size={16} aria-hidden="true" /> : null}
+      </div>
+      <div className="tf-kpi-content">
         <strong>{value}</strong>
-        <Sparkline points={points} tone={tone} />
-      </CardContent>
-    </Card>
+      </div>
+      <p className="tf-kpi-hint">{hint}</p>
+    </div>
   );
 }
 
@@ -265,12 +247,44 @@ export default async function DashboardPage({
   const p95Latency = metrics.p95LatencyMs;
   const tokenTotal = metrics.promptTokens + metrics.completionTokens;
   const totalCost = metrics.totalCost;
-  const chartRows = trendRows.map((row) => ({
-    label: row.date!.slice(5),
-    requests: row.requestCount,
-    errors: row.failureCount,
-  }));
-  const maxChartRequests = Math.max(1, ...chartRows.map((row) => row.requests));
+  const chartByDate = new Map(
+    trendRows.map((row) => [
+      row.date!,
+      {
+        date: row.date!,
+        requests: row.requestCount,
+        errors: row.failureCount,
+        tokens: Number(row.promptTokens + row.completionTokens),
+        latency: row.p95LatencyMs,
+      },
+    ]),
+  );
+  const chartRows: UsagePoint[] = [];
+  const firstDay = new Date(filters.from + "T00:00:00Z").getTime();
+  const lastDay = new Date(filters.to + "T00:00:00Z").getTime();
+  // Bound the visual density for long custom ranges; the totals still cover the entire range.
+  const completeRange =
+    lastDay >= firstDay && (lastDay - firstDay) / 86400000 < 62;
+  if (trendRows.length && completeRange) {
+    for (let day = firstDay; day <= lastDay; day += 86400000) {
+      const date = new Date(day).toISOString().slice(0, 10);
+      chartRows.push(
+        chartByDate.get(date) ?? {
+          date,
+          requests: 0,
+          errors: 0,
+          tokens: 0,
+          latency: null,
+        },
+      );
+    }
+  } else {
+    chartRows.push(...chartByDate.values());
+  }
+  const today = shanghaiDay(new Date());
+  const activeProject =
+    projects.find((project) => project.id === filters.projectId)?.name ??
+    "全部项目";
   const providerRows = modelRows.map((row) => ({
     label: providerName(row.provider, row.model),
     successRate: 100 * (1 - (row.failureRate ?? 0)),
@@ -294,46 +308,72 @@ export default async function DashboardPage({
     <main className="tf-dashboard">
       <header className="tf-page-title">
         <div>
-          <p className="eyebrow">OBSERVABILITY</p>
           <h1>治理总览</h1>
-          <p>从每一次调用，了解你的 AI 应用。</p>
+          <p>{activeProject} · 请求、用量与运行质量</p>
         </div>
-        <Button asChild variant="outline">
+        <Button asChild>
           <Link href="/chat">
             调试新请求 <ArrowUpRight aria-hidden="true" />
           </Link>
         </Button>
       </header>
-      <form className="tf-filter-strip" method="get">
-        <div className="tf-filter-context">
-          <CalendarDays size={16} aria-hidden="true" />
-          <span>分析范围</span>
+      <div className="tf-range-toolbar">
+        <div className="tf-range-heading">
+          <div className="tf-range-presets" aria-label="快捷日期">
+            {[1, 7, 30].map((days) => {
+              const from = new Date(
+                new Date(today + "T00:00:00Z").getTime() -
+                  (days - 1) * 86400000,
+              )
+                .toISOString()
+                .slice(0, 10);
+              return (
+                <Link
+                  key={days}
+                  href={"/dashboard" + buildQuery(filters, { from, to: today })}
+                  aria-current={
+                    filters.from === from && filters.to === today
+                      ? "date"
+                      : undefined
+                  }
+                >
+                  {days === 1 ? "今天" : "近 " + days + " 天"}
+                </Link>
+              );
+            })}
+          </div>
         </div>
-        <NativeSelect
-          name="projectId"
-          defaultValue={filters.projectId ?? ""}
-          aria-label="项目"
-        >
-          <NativeSelectOption value="">全部项目</NativeSelectOption>
-          {projects.map((project) => (
-            <NativeSelectOption key={project.id} value={project.id}>
-              {project.name}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
-        <label>
-          <span>开始</span>
-          <input name="from" type="date" defaultValue={filters.from} />
-        </label>
-        <label>
-          <span>结束</span>
-          <input name="to" type="date" defaultValue={filters.to} />
-        </label>
-        <Button type="submit" variant="outline" size="sm">
-          <RefreshCw size={14} aria-hidden="true" />
-          应用筛选
-        </Button>
-      </form>
+        <form className="tf-filter-strip" method="get">
+          <div className="tf-filter-context">
+            <CalendarDays size={16} aria-hidden="true" />
+            <span>范围</span>
+          </div>
+          <NativeSelect
+            name="projectId"
+            defaultValue={filters.projectId ?? ""}
+            aria-label="项目"
+          >
+            <NativeSelectOption value="">全部项目</NativeSelectOption>
+            {projects.map((project) => (
+              <NativeSelectOption key={project.id} value={project.id}>
+                {project.name}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+          <label>
+            <span>开始</span>
+            <input name="from" type="date" defaultValue={filters.from} />
+          </label>
+          <label>
+            <span>结束</span>
+            <input name="to" type="date" defaultValue={filters.to} />
+          </label>
+          <Button type="submit" variant="outline" size="sm">
+            <RefreshCw size={14} aria-hidden="true" />
+            应用筛选
+          </Button>
+        </form>
+      </div>
       {requestCount === 0 ? (
         <p className="empty-state" role="status">
           当前范围暂无运行数据。接入网关后查看指标，或调整项目和日期范围。
@@ -343,29 +383,29 @@ export default async function DashboardPage({
         <KpiTile
           label="请求量"
           value={formatNumber(requestCount) + " 次"}
-          points={trendRows.map((r) => r.requestCount)}
+          hint={"成功 " + formatNumber(metrics.successCount) + " 次"}
+          icon={Activity}
         />
         <KpiTile
           label="失败率"
           value={formatPercent(failureRate)}
-          points={trendRows.map((r) =>
-            r.requestCount ? r.failureCount / r.requestCount : 0,
-          )}
-          tone="danger"
+          hint={"失败 " + formatNumber(metrics.failureCount) + " 次"}
+          icon={CircleAlert}
+          tone={metrics.failureCount > 0 ? "danger" : "neutral"}
         />
         <KpiTile
           label="P95 延迟"
           value={formatMs(p95Latency)}
-          points={trendRows.flatMap((r) =>
-            r.p95LatencyMs === null ? [] : [r.p95LatencyMs],
-          )}
+          hint={"平均延迟 " + formatMs(metrics.averageLatencyMs)}
+          icon={Clock3}
         />
         <KpiTile
           label="成本"
           value={totalCost === null ? "—" : "$" + formatMoney(totalCost)}
-          points={trendRows.flatMap((r) =>
-            r.totalCost === null ? [] : [Number(r.totalCost)],
-          )}
+          hint={
+            totalCost === null ? "存在未知价格，暂不汇总" : "USD · 当前筛选范围"
+          }
+          icon={Coins}
         />
       </section>
       {requestCount > 0 && totalCost === null ? (
@@ -374,104 +414,60 @@ export default async function DashboardPage({
         </p>
       ) : null}
       <div className="tf-overview-grid">
-        <Card className="tf-panel tf-trend-panel">
+        <UsageChart
+          rows={chartRows}
+          projectId={filters.projectId}
+          completeRange={completeRange}
+        />
+        <Card className="tf-panel tf-overview-summary">
           <CardHeader className="tf-panel-head">
             <div>
-              <CardTitle>请求趋势</CardTitle>
-              <CardDescription>每日用量 · 上海时区</CardDescription>
-            </div>
-            <div className="tf-chart-legend">
-              <span>请求量</span>
-              <span>失败</span>
+              <CardTitle>运行概况</CardTitle>
+              <CardDescription>当前筛选范围内的事件</CardDescription>
             </div>
           </CardHeader>
-          <CardContent className="tf-usage-chart">
-            <div className="tf-chart-scale">
-              <span>{formatNumber(maxChartRequests)}</span>
-              <span>{formatNumber(Math.floor(maxChartRequests / 2))}</span>
-              <span>0</span>
-            </div>
-            <div
-              className="tf-chart-bars"
-              data-dense={chartRows.length > 7}
-              style={{
-                gridTemplateColumns:
-                  "repeat(" +
-                  Math.max(chartRows.length, 1) +
-                  ", minmax(0, 1fr))",
-              }}
-            >
-              {chartRows.map((row) => (
-                <div
-                  key={row.label}
-                  className="tf-chart-column"
-                  title={
-                    row.label +
-                    " · 请求 " +
-                    row.requests +
-                    " · 失败 " +
-                    row.errors
-                  }
-                >
-                  <div
-                    className="tf-chart-track"
-                    role="img"
-                    aria-label={
-                      row.label +
-                      "：请求 " +
-                      row.requests +
-                      " 次，失败 " +
-                      row.errors +
-                      " 次"
-                    }
-                  >
-                    <span
-                      style={{
-                        height: (row.requests / maxChartRequests) * 100 + "%",
-                      }}
-                    />
-                    <span
-                      className="tf-chart-errors"
-                      style={{
-                        height: (row.errors / maxChartRequests) * 100 + "%",
-                      }}
-                    />
-                  </div>
-                  <small>{row.label}</small>
-                </div>
-              ))}
-            </div>
-            <div className="tf-chart-summary">
-              <span>
-                总计 <strong>{formatNumber(requestCount)}</strong> 次请求
-              </span>
-              <span>
-                失败 <strong>{formatNumber(metrics.failureCount)}</strong> 次
-              </span>
-            </div>
-          </CardContent>
+          <section className="tf-secondary-metrics" aria-label="运行概况">
+            <KpiTile
+              label="令牌"
+              value={compactNumber(tokenTotal)}
+              hint={
+                "输入 " +
+                compactNumber(metrics.promptTokens) +
+                " / 输出 " +
+                compactNumber(metrics.completionTokens)
+              }
+            />
+            <KpiTile
+              label="备用切换"
+              value={formatNumber(fallbackCount)}
+              hint={
+                "切换失败 " +
+                formatNumber(governanceData.fallbackFailed) +
+                " 次"
+              }
+            />
+            <KpiTile
+              label="流式错误"
+              value={formatNumber(streamErrorCount)}
+              hint="查看下方中断原因分布"
+              tone={streamErrorCount > 0 ? "danger" : "neutral"}
+            />
+          </section>
+          <Link
+            className={
+              "tf-attention-link " + (metrics.failureCount ? "has-errors" : "")
+            }
+            href={traceListHref(baseTraceQuery, { status: "failed" })}
+          >
+            <CircleAlert size={16} aria-hidden="true" />
+            <span>
+              {metrics.failureCount
+                ? formatNumber(metrics.failureCount) + " 次失败请求，前往排查"
+                : "查看失败请求"}
+            </span>
+            <ArrowUpRight size={15} aria-hidden="true" />
+          </Link>
         </Card>
-        <section className="tf-secondary-metrics" aria-label="运行概况">
-          <KpiTile
-            label="令牌"
-            value={compactNumber(tokenTotal)}
-            points={trendRows.map((r) =>
-              Number(r.promptTokens + r.completionTokens),
-            )}
-          />
-          <KpiTile
-            label="备用切换"
-            value={formatNumber(fallbackCount)}
-            points={[]}
-            tone="warning"
-          />
-          <KpiTile
-            label="流式错误"
-            value={formatNumber(streamErrorCount)}
-            points={[]}
-            tone="danger"
-          />
-        </section>
       </div>
       <Card className="tf-panel tf-trace-panel">
         <CardHeader className="tf-panel-head">

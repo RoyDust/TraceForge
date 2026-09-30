@@ -1,5 +1,7 @@
 "use client";
 
+import { MessageSquare, ArrowUpRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 type ModelOption = {
@@ -50,14 +52,6 @@ type RunResponse = {
 };
 
 const SYSTEM_PROMPT = "你是一个简洁的助手。";
-const INITIAL_MESSAGES: ChatMessage[] = [
-  {
-    id: "welcome",
-    role: "assistant",
-    content: "我已经准备好。发送一条消息后，左侧会同步显示这次 TraceRun 的实时状态。",
-    state: "done",
-  },
-];
 
 function formatCost(value: string | null) {
   if (!value) return "—";
@@ -86,12 +80,23 @@ function statusLabel(status: RunSnapshot["status"] | "pending" | null) {
   return "空闲";
 }
 
-export function ChatForm({ models, hasChatApiKey, defaultModel }: { models: ModelOption[]; hasChatApiKey: boolean; defaultModel?: string }) {
-  const preferredModel = models.find((option) => option.modelName === "mock-ok") ?? models[0];
-  const [model, setModel] = useState(defaultModel ?? preferredModel?.modelName ?? "");
+export function ChatForm({
+  models,
+  hasChatApiKey,
+  defaultModel,
+}: {
+  models: ModelOption[];
+  hasChatApiKey: boolean;
+  defaultModel?: string;
+}) {
+  const preferredModel =
+    models.find((option) => option.modelName === "mock-ok") ?? models[0];
+  const [model, setModel] = useState(
+    defaultModel ?? preferredModel?.modelName ?? "",
+  );
   const [stream, setStream] = useState(false);
   const [input, setInput] = useState("Say hello from TraceForge.");
-  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
   const [currentTraceUrl, setCurrentTraceUrl] = useState<string | null>(null);
   const [run, setRun] = useState<RunSnapshot | null>(null);
@@ -114,7 +119,8 @@ export function ChatForm({ models, hasChatApiKey, defaultModel }: { models: Mode
   const status = run?.status ?? (runPending ? "pending" : null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ block: "end" });
+    if (messages.length > 0)
+      messagesEndRef.current?.scrollIntoView({ block: "end" });
   }, [messages, run?.status]);
 
   useEffect(() => {
@@ -125,11 +131,21 @@ export function ChatForm({ models, hasChatApiKey, defaultModel }: { models: Mode
     async function tick() {
       if (cancelled || targetMessageId !== assistantMessageId.current) return;
       if (deadline && Date.now() >= deadline) {
-        setError("未确认派发或运行尚未完成，已停止等待。请核对运行 ID 后再决定是否重新发送。");
-        setRunPending(false); setSending(false); return;
+        setError(
+          "未确认派发或运行尚未完成，已停止等待。请核对运行 ID 后再决定是否重新发送。",
+        );
+        setRunPending(false);
+        setSending(false);
+        return;
       }
       try {
-        const response = await fetch("/chat/runs/" + currentRunId + "?pending=" + encodeURIComponent(receipt), { cache: "no-store", signal: AbortSignal.timeout(5000) });
+        const response = await fetch(
+          "/chat/runs/" +
+            currentRunId +
+            "?pending=" +
+            encodeURIComponent(receipt),
+          { cache: "no-store", signal: AbortSignal.timeout(5000) },
+        );
         const body = (await response.json().catch(() => ({}))) as RunResponse;
         if (cancelled || targetMessageId !== assistantMessageId.current) return;
         if (!response.ok) {
@@ -143,18 +159,35 @@ export function ChatForm({ models, hasChatApiKey, defaultModel }: { models: Mode
         if (!body.run || !assistantMessageId.current) return;
 
         if (body.run.status === "success") {
-          const content = body.run.outputPreview?.trim() || "完成，但没有输出预览。";
-          setMessages((items) => items.map((item) => (item.id === assistantMessageId.current ? { ...item, content, state: "done" } : item)));
+          const content =
+            body.run.outputPreview?.trim() || "完成，但没有输出预览。";
+          setMessages((items) =>
+            items.map((item) =>
+              item.id === assistantMessageId.current
+                ? { ...item, content, state: "done" }
+                : item,
+            ),
+          );
           setSending(false);
         }
         if (body.run.status === "failed" || body.run.status === "cancelled") {
           const content = body.run.error || body.run.errorCode || "调用失败。";
-          setMessages((items) => items.map((item) => (item.id === assistantMessageId.current ? { ...item, content, state: "error" } : item)));
+          setMessages((items) =>
+            items.map((item) =>
+              item.id === assistantMessageId.current
+                ? { ...item, content, state: "error" }
+                : item,
+            ),
+          );
           setSending(false);
         }
       } catch (pollError) {
         if (!cancelled) {
-          setError(pollError instanceof Error ? pollError.message : "读取 TraceRun 失败。");
+          setError(
+            pollError instanceof Error
+              ? pollError.message
+              : "读取 TraceRun 失败。",
+          );
         }
       }
     }
@@ -173,9 +206,17 @@ export function ChatForm({ models, hasChatApiKey, defaultModel }: { models: Mode
     if (!content || !canSend) return;
 
     const previousConversation = messages
-      .filter((message) => message.role === "user" || (message.role === "assistant" && message.state === "done"))
+      .filter(
+        (message) =>
+          message.role === "user" ||
+          (message.role === "assistant" && message.state === "done"),
+      )
       .map((message) => ({ role: message.role, content: message.content }));
-    const gatewayMessages = [{ role: "system", content: SYSTEM_PROMPT }, ...previousConversation, { role: "user", content }];
+    const gatewayMessages = [
+      { role: "system", content: SYSTEM_PROMPT },
+      ...previousConversation,
+      { role: "user", content },
+    ];
     const userId = crypto.randomUUID();
     const assistantId = crypto.randomUUID();
 
@@ -183,7 +224,12 @@ export function ChatForm({ models, hasChatApiKey, defaultModel }: { models: Mode
     setMessages((items) => [
       ...items,
       { id: userId, role: "user", content, state: "done" },
-      { id: assistantId, role: "assistant", content: "等待网关接受请求…", state: "pending" },
+      {
+        id: assistantId,
+        role: "assistant",
+        content: "等待网关接受请求…",
+        state: "pending",
+      },
     ]);
     setInput("");
     setRun(null);
@@ -201,13 +247,21 @@ export function ChatForm({ models, hasChatApiKey, defaultModel }: { models: Mode
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ model, messages: gatewayMessages, stream }),
       });
-      const body = (await response.json().catch(() => ({}))) as DispatchResponse;
+      const body = (await response
+        .json()
+        .catch(() => ({}))) as DispatchResponse;
       if (!response.ok || !body.runId) {
         const message = body.error ?? `发送失败 (${response.status})。`;
         setError(message);
         setRunPending(false);
         setSending(false);
-        setMessages((items) => items.map((item) => (item.id === assistantId ? { ...item, content: message, state: "error" } : item)));
+        setMessages((items) =>
+          items.map((item) =>
+            item.id === assistantId
+              ? { ...item, content: message, state: "error" }
+              : item,
+          ),
+        );
         return;
       }
       setDeadline(body.deadline ?? Date.now() + 45000);
@@ -215,43 +269,67 @@ export function ChatForm({ models, hasChatApiKey, defaultModel }: { models: Mode
       setCurrentRunId(body.runId);
       setCurrentTraceUrl(body.traceUrl ?? `/traces/${body.runId}?pending=1`);
     } catch (dispatchError) {
-      const message = dispatchError instanceof Error ? dispatchError.message : "发送失败。";
+      const message =
+        dispatchError instanceof Error ? dispatchError.message : "发送失败。";
       setError(message);
       setRunPending(false);
       setSending(false);
-      setMessages((items) => items.map((item) => (item.id === assistantId ? { ...item, content: message, state: "error" } : item)));
+      setMessages((items) =>
+        items.map((item) =>
+          item.id === assistantId
+            ? { ...item, content: message, state: "error" }
+            : item,
+        ),
+      );
     }
   }
 
   return (
     <div className="chat-workbench">
       <aside className="chat-live-panel" aria-label="当前对话实时信息">
-        <section className="section-band">
-          <h2>设置</h2>
+        <section className="section-band chat-settings">
+          <h2>请求设置</h2>
           <label>
             模型
-            <select value={model} onChange={(event) => setModel(event.target.value)} disabled={models.length === 0 || sending}>
-              {!selectedModel ? <option value={model} disabled>请选择可用模型</option> : null}
+            <select
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              disabled={models.length === 0 || sending}
+            >
+              {!selectedModel ? (
+                <option value={model} disabled>
+                  请选择可用模型
+                </option>
+              ) : null}
               {models.map((option) => (
                 <option key={option.id} value={option.modelName}>
-                  {option.providerName} / {option.displayName ?? option.modelName}
+                  {option.providerName} /{" "}
+                  {option.displayName ?? option.modelName}
                 </option>
               ))}
             </select>
           </label>
           <label className="checkbox-row">
-            <input type="checkbox" checked={stream} onChange={(event) => setStream(event.target.checked)} disabled={sending} />
+            <input
+              type="checkbox"
+              checked={stream}
+              onChange={(event) => setStream(event.target.checked)}
+              disabled={sending}
+            />
             流式输出
           </label>
-          {disabledReason ? <p className="form-error">{disabledReason}</p> : null}
+          {disabledReason ? (
+            <p className="form-error">{disabledReason}</p>
+          ) : null}
         </section>
-        <section className="section-band">
+        <section className="section-band chat-run-info">
           <div className="chat-panel-head">
             <div>
-              <p className="eyebrow">实时运行</p>
               <h2>当前对话</h2>
             </div>
-            <span className={status ? `badge ${status}` : "badge"}>{statusLabel(status)}</span>
+            <span className={status ? `badge ${status}` : "badge"}>
+              {statusLabel(status)}
+            </span>
           </div>
 
           <div className="kv-grid single-column">
@@ -261,7 +339,11 @@ export function ChatForm({ models, hasChatApiKey, defaultModel }: { models: Mode
             </div>
             <div className="kv">
               <small>模型</small>
-              <strong>{selectedModel ? `${selectedModel.providerName} / ${selectedModel.displayName ?? selectedModel.modelName}` : "—"}</strong>
+              <strong>
+                {selectedModel
+                  ? `${selectedModel.providerName} / ${selectedModel.displayName ?? selectedModel.modelName}`
+                  : "—"}
+              </strong>
             </div>
             <div className="kv">
               <small>模式</small>
@@ -269,7 +351,9 @@ export function ChatForm({ models, hasChatApiKey, defaultModel }: { models: Mode
             </div>
             <div className="kv">
               <small>供应商</small>
-              <strong>{run?.provider ?? selectedModel?.providerName ?? "—"}</strong>
+              <strong>
+                {run?.provider ?? selectedModel?.providerName ?? "—"}
+              </strong>
             </div>
             <div className="kv">
               <small>延迟</small>
@@ -293,26 +377,73 @@ export function ChatForm({ models, hasChatApiKey, defaultModel }: { models: Mode
           ) : null}
 
           <div className="chat-event-strip">
-            {(run?.eventTypes.length ? run.eventTypes : status === "pending" ? ["pending"] : ["ready"]).slice(-5).map((eventType, index) => (
-              <span key={`${eventType}-${index}`}>{eventType}</span>
-            ))}
+            {(run?.eventTypes.length
+              ? run.eventTypes
+              : status === "pending"
+                ? ["pending"]
+                : ["ready"]
+            )
+              .slice(-5)
+              .map((eventType, index) => (
+                <span key={`${eventType}-${index}`}>{eventType}</span>
+              ))}
           </div>
 
           {currentTraceUrl ? (
-            <a className="button secondary chat-trace-link" href={currentTraceUrl}>
+            <a
+              className="button secondary chat-trace-link"
+              href={currentTraceUrl}
+            >
               打开追踪运行
             </a>
           ) : null}
         </section>
-
-
       </aside>
 
       <section className="chat-conversation" aria-label="智能体对话">
+        <div className="chat-conversation-head">
+          <MessageSquare size={16} aria-hidden="true" />
+          <strong>
+            {selectedModel?.displayName ??
+              selectedModel?.modelName ??
+              "选择模型以开始"}
+          </strong>
+          <span>{stream ? "流式响应" : "完整响应"}</span>
+        </div>
         <div className="chat-thread">
+          {messages.length === 0 ? (
+            <div className="chat-welcome">
+              <div className="chat-welcome-mark">
+                <MessageSquare size={25} aria-hidden="true" />
+              </div>
+              <h2>从一次对话开始调试</h2>
+              <p>选择模型，发送消息。延迟、Token 和调用链会随运行结果更新。</p>
+              <div className="chat-starters" aria-label="示例消息">
+                {[
+                  "用一句话介绍你自己。",
+                  "用 JSON 返回三个常见 HTTP 状态码及其含义。",
+                ].map((message) => (
+                  <Button
+                    key={message}
+                    type="button"
+                    variant="outline"
+                    onClick={() => setInput(message)}
+                  >
+                    {message}
+                    <ArrowUpRight size={14} aria-hidden="true" />
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {messages.map((message) => (
-            <article className={`chat-bubble ${message.role} ${message.state ?? ""}`} key={message.id}>
-              <small>{message.role === "user" ? "你" : "TraceForge 智能体"}</small>
+            <article
+              className={`chat-bubble ${message.role} ${message.state ?? ""}`}
+              key={message.id}
+            >
+              <small>
+                {message.role === "user" ? "你" : "TraceForge 智能体"}
+              </small>
               <p>{message.content}</p>
             </article>
           ))}
@@ -342,9 +473,13 @@ export function ChatForm({ models, hasChatApiKey, defaultModel }: { models: Mode
               disabled={Boolean(disabledReason)}
             />
           </label>
-          <button type="submit" disabled={!canSend}>
-            {sending ? "等待响应" : "发送消息"}
-          </button>
+          <div className="chat-composer-footer">
+            <small>通过网关执行真实请求，并记录运行证据</small>
+            <Button type="submit" disabled={!canSend}>
+              {sending ? "等待响应" : "发送消息"}
+              <ArrowUpRight size={15} aria-hidden="true" />
+            </Button>
+          </div>
         </form>
       </section>
     </div>
