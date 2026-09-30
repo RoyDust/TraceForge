@@ -27,12 +27,12 @@ export async function getDashboardData(filters: { from: string; to: string; proj
   const factQuery = base + ', tokens AS (SELECT run_id, SUM(prompt_tokens)::bigint AS pt, SUM(completion_tokens)::bigint AS ct FROM s GROUP BY run_id) ' +
     'SELECT to_char((r.started_at + interval \'8 hours\')::date, \'YYYY-MM-DD\') AS date, count(*)::int AS "requestCount", ' +
     'count(*) FILTER (WHERE r.status = \'success\')::int AS "successCount", count(*) FILTER (WHERE r.status IN (\'failed\',\'cancelled\'))::int AS "failureCount", ' +
-    'COALESCE(SUM(t.pt),0)::bigint AS "promptTokens", COALESCE(SUM(t.ct),0)::bigint AS "completionTokens", SUM(r.cost)::text AS "totalCost", ' +
+    'COALESCE(SUM(t.pt),0)::bigint AS "promptTokens", COALESCE(SUM(t.ct),0)::bigint AS "completionTokens", CASE WHEN COUNT(r.cost) = COUNT(*) THEN SUM(r.cost)::text END AS "totalCost", ' +
     'round(avg(r.latency_ms))::int AS "averageLatencyMs", percentile_disc(0.95) WITHIN GROUP (ORDER BY r.latency_ms)::int AS "p95LatencyMs" ' +
     'FROM r LEFT JOIN tokens t ON t.run_id = r.id GROUP BY GROUPING SETS ((), ((r.started_at + interval \'8 hours\')::date)) ORDER BY date NULLS FIRST';
   const modelQuery = base + ' SELECT COALESCE(provider,\'gateway\') AS provider, COALESCE(model,\'unknown\') AS model, ' +
     'count(DISTINCT run_id)::int AS "requestCount", count(DISTINCT run_id) FILTER (WHERE run_status IN (\'failed\',\'cancelled\') OR status IN (\'failed\',\'cancelled\'))::int AS "failureCount", ' +
-    'COALESCE(SUM(prompt_tokens),0)::bigint AS "promptTokens", COALESCE(SUM(completion_tokens),0)::bigint AS "completionTokens", SUM(cost)::text AS "totalCost", ' +
+    'COALESCE(SUM(prompt_tokens),0)::bigint AS "promptTokens", COALESCE(SUM(completion_tokens),0)::bigint AS "completionTokens", CASE WHEN COUNT(cost) = COUNT(*) THEN SUM(cost)::text END AS "totalCost", ' +
     'round(avg(latency_ms))::int AS "averageLatencyMs", percentile_disc(0.95) WITHIN GROUP (ORDER BY latency_ms)::int AS "p95LatencyMs", ' +
     'count(DISTINCT run_id) FILTER (WHERE error_code IN (\'rate_limited\',\'concurrency_limited\'))::int AS "limitCount" FROM s GROUP BY provider, model ORDER BY SUM(cost) DESC NULLS LAST';
   const governanceQuery = base + ' SELECT (SELECT count(*)::int FROM e WHERE type=\'fallback_triggered\') AS "fallbackTriggered", (SELECT count(*)::int FROM e WHERE type=\'fallback_failed\') AS "fallbackFailed", ' +

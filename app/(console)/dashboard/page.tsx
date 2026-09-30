@@ -250,6 +250,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         <KpiTile label="备用切换" value={formatNumber(fallbackCount)} points={[]} tone="warning" />
         <KpiTile label="流式错误" value={formatNumber(streamErrorCount)} points={[]} tone="danger" />
       </section>
+      {requestCount > 0 && totalCost === null ? <p className="muted" role="status">当前范围存在成本未知的运行，成本合计及占比暂不展示。</p> : null}
 
       <form className="tf-filter-strip" method="get">
         <div className="tf-filter-tabs" aria-label="状态筛选">
@@ -478,7 +479,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
                           <TableCell>{row.model}</TableCell>
                           <TableCell>{formatNumber(row.requestCount)}</TableCell>
                           <TableCell>{compactNumber(row.promptTokens + row.completionTokens)}</TableCell>
-                          <TableCell>${formatMoney(row.totalCost)}</TableCell>
+                          <TableCell>{row.totalCost === null ? "—" : `$${formatMoney(row.totalCost)}`}</TableCell>
                           <TableCell>{formatPercent(totalCost && row.totalCost ? ratio(Number(row.totalCost), Number(totalCost)) : null)}</TableCell>
                         </TableRow>
                       ))}
