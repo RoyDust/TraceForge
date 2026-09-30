@@ -65,7 +65,7 @@ export default async function EvalsPage({ searchParams }: { searchParams: Search
     <main>
       <header className="page-head">
         <div>
-          <p className="eyebrow">第 6 阶段 · 评测</p>
+          <p className="eyebrow">EVALUATIONS</p>
           <h1>回归评测</h1>
           <p className="muted">把提示词版本变成可重复验证的上线闸门。</p>
         </div>

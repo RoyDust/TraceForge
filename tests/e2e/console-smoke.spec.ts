@@ -20,7 +20,7 @@ test("administrator can enter the database-backed Console and sign out", async (
   await login(page);
   await expect(page.getByRole("combobox", { name: "项目", exact: true }).first())
     .toContainText("Playwright baseline");
-  await page.getByRole("button", { name: "退出", exact: true }).click();
+  await page.getByRole("button", { name: "退出登录", exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
   await page.goto("/traces");
   await expect(page).toHaveURL(/\/login$/);
@@ -54,4 +54,20 @@ test("real Gateway proxies to the mock upstream over HTTP", async ({ request }) 
   expect(response.ok()).toBeTruthy();
   const result = await response.json();
   expect(result.choices[0].message.content).toBe("hello from mock");
+});
+
+
+test("Base UI navigation and global search work with the keyboard", async ({ page }) => {
+  await login(page);
+  await page.getByRole("navigation", { name: "主导航" }).getByRole("link", { name: "治理总览", exact: true }).press("Enter");
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.getByRole("combobox", { name: "搜索项目", exact: true }).selectOption({ label: "Demo Project" });
+  await page.getByRole("textbox", { name: "全局搜索", exact: true }).fill("demo-run-20");
+  await page.getByRole("textbox", { name: "全局搜索", exact: true }).press("Enter");
+  await expect(page).toHaveURL(/\/traces\?/);
+  expect(new URL(page.url()).searchParams.get("model")).toBe("demo-run-20");
+  expect(new URL(page.url()).searchParams.get("projectId")).toBeTruthy();
+  await expect(page.getByRole("heading", { name: "追踪运行", exact: true })).toBeVisible();
+  await expect(page.locator('.tf-run-list')).toContainText("demo-run-20");
+  await expect(page.locator(".tf-run-list").getByRole("link")).toHaveCount(1);
 });

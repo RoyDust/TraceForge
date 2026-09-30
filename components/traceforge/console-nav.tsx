@@ -9,7 +9,7 @@ import {
   ListTree,
   MessageCircle,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+
 import {
   Tooltip,
   TooltipContent,
@@ -40,18 +40,17 @@ export function ConsoleNav() {
 
         return (
           <Tooltip key={item.href}>
-            <TooltipTrigger asChild>
-              <Button
-                asChild
-                variant="ghost"
-                size="sm"
-                className={cn("console-nav-link", active && "is-active")}
-              >
-                <Link href={item.href} aria-current={active ? "page" : undefined}>
-                  <Icon aria-hidden="true" />
-                  <span>{item.label}</span>
-                </Link>
-              </Button>
+            <TooltipTrigger
+              render={
+                <Link
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                />
+              }
+              className={cn("console-nav-link", active && "is-active")}
+            >
+              <Icon aria-hidden="true" />
+              <span>{item.label}</span>
             </TooltipTrigger>
             <TooltipContent side="right">{item.label}</TooltipContent>
           </Tooltip>

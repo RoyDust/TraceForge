@@ -111,10 +111,10 @@ test("unknown costs remain unknown in aggregates and never receive highest-cost 
   await page.reload();
   await expect(costKpi).toHaveText("—");
   await expect(page.getByRole("status")).toContainText("成本合计及占比暂不展示");
-  const mixed = page.getByRole("row").filter({ has: page.getByRole("cell", { name: "mixed-cost-fixture", exact: true }) });
+  const mixed = page.locator(".tf-cost-table").getByRole("row").filter({ has: page.getByRole("cell", { name: /mixed-cost-fixture/ }) });
   await expect(mixed.getByRole("cell").nth(3)).toHaveText("—");
   await expect(mixed.getByRole("cell").nth(4)).toHaveText("—");
-  const zero = page.getByRole("row").filter({ has: page.getByRole("cell", { name: "zero-cost-fixture", exact: true }) });
+  const zero = page.locator(".tf-cost-table").getByRole("row").filter({ has: page.getByRole("cell", { name: /zero-cost-fixture/ }) });
   await expect(zero.getByRole("cell").nth(3)).toHaveText("$0");
   await expect(zero.getByRole("cell").nth(4)).toHaveText("—");
   for (const path of ["/traces?projectId=" + project.id + "&run=" + unknown.id, "/traces/" + unknown.id]) {
@@ -181,9 +181,9 @@ test("all-project refresh preserves dates and no-span gateway rejections remain 
   await login(page);
   await page.goto("/dashboard?projectId=" + project.id + "&from=2001-01-02&to=2001-01-02");
   await expect(page.getByText("网关拒绝（未达模型）", { exact: true })).toBeVisible();
-  const filters = page.locator("form.tf-title-filter");
+  const filters = page.locator("form.tf-filter-strip");
   await filters.locator('[name="projectId"]').selectOption("");
-  await filters.getByRole("button", { name: "刷新" }).click();
+  await filters.getByRole("button", { name: "应用筛选" }).click();
   await expect(page.getByRole("heading", { name: "治理总览", exact: true })).toBeVisible();
   expect(new URL(page.url()).searchParams.get("from")).toBe("2001-01-02");
   await expect(page.locator(".tf-kpi-card").filter({ hasText: "请求量" }).locator("strong")).toHaveText("1 次");

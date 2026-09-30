@@ -46,7 +46,7 @@ export default async function PromptsPage({ searchParams }: { searchParams: Sear
     <main>
       <header className="page-head">
         <div>
-          <p className="eyebrow">第 5 阶段 · 提示词</p>
+          <p className="eyebrow">PROMPT LIBRARY</p>
           <h1>提示词版本管理</h1>
           <p className="muted">把提示词改动固化成版本快照，支持差异对比、发布和回滚。</p>
         </div>

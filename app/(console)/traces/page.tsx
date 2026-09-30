@@ -7,9 +7,7 @@ import {
   ExternalLink,
   Filter,
   GitBranch,
-  ListFilter,
   MessageCircle,
-  MoreVertical,
   Search,
   ShieldAlert,
 } from "lucide-react";
@@ -285,12 +283,7 @@ function WaterfallTimeline({ spans }: { spans: SpanWithEvents[] }) {
   return (
     <div className="tf-waterfall">
       <div className="tf-waterfall-scale" aria-hidden="true">
-        <span>0s</span>
-        <span>5s</span>
-        <span>10s</span>
-        <span>15s</span>
-        <span>20s</span>
-        <span>25s</span>
+        {[0, 1, 2, 3, 4, 5].map((tick) => <span key={tick}>{formatMs(Math.round(total * tick / 5))}</span>)}
       </div>
       {spans.map((span) => {
         const left = ((span.startedAt.getTime() - minStart) / total) * 100;
@@ -478,8 +471,8 @@ export default async function TraceListPage({ searchParams }: { searchParams: Se
     <main className="tf-incident">
       <header className="tf-incident-title">
         <div>
-          <h1>事故指挥台</h1>
-          <p>从失败追踪切入，同屏查看运行证据并定位责任域。</p>
+          <h1>追踪运行</h1>
+          <p>查看调用链路、耗时与成本，从运行证据定位问题。</p>
         </div>
         <form className="tf-title-filter" method="get">
           <NativeSelect name="projectId" size="sm" defaultValue={filters.projectId ?? ""} aria-label="项目">
@@ -505,9 +498,6 @@ export default async function TraceListPage({ searchParams }: { searchParams: Se
               <CardDescription>{formatNumber(total || rows.length)} 条运行</CardDescription>
             </div>
             <CardAction>
-              <Button size="icon-sm" variant="ghost" aria-label="队列筛选">
-                <ListFilter aria-hidden="true" />
-              </Button>
             </CardAction>
           </CardHeader>
           <CardContent className="tf-run-queue-body">
@@ -622,9 +612,6 @@ export default async function TraceListPage({ searchParams }: { searchParams: Se
                         打开对话
                       </Link>
                     </Button>
-                    <Button size="icon-sm" variant="ghost" aria-label="更多操作">
-                      <MoreVertical aria-hidden="true" />
-                    </Button>
                   </CardAction>
                 </CardHeader>
                 <CardContent className="tf-incident-summary">
@@ -671,14 +658,14 @@ export default async function TraceListPage({ searchParams }: { searchParams: Se
 
               <section className="tf-incident-metrics">
                 <div>
-                  <small>P95 延迟</small>
-                  <strong>{formatMs(summary?.slowest?.latencyMs ?? selectedRun.latencyMs)}</strong>
-                  <span className="ok">↓ 0.21s</span>
+                  <small>最慢跨度</small>
+                  <strong>{formatMs(summary?.slowest ? duration(summary.slowest) : null)}</strong>
+                  <span>选中运行</span>
                 </div>
                 <div>
                   <small>延迟</small>
                   <strong>{formatMs(selectedRun.latencyMs)}</strong>
-                  <span className="danger">↑ 18.7s</span>
+                  <span>选中运行</span>
                 </div>
                 <div>
                   <small>输入 / 输出</small>

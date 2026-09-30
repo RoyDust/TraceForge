@@ -7,13 +7,10 @@ import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import {
   ArrowRight,
-  CheckCircle2,
-  Copy,
   ExternalLink,
   Play,
   RotateCcw,
   Rocket,
-  Star,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,7 +22,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 import {
   Table,
   TableBody,
@@ -35,11 +35,21 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { runEvalDatasetAction } from "@/app/(console)/evals/actions";
-import { compactId, formatDate, formatMoney, formatMs, formatNumber, formatPercent } from "@/lib/format";
+import {
+  compactId,
+  formatDate,
+  formatMoney,
+  formatMs,
+  formatNumber,
+  formatPercent,
+} from "@/lib/format";
 import { passRate } from "@/lib/eval-runner";
 import { diffLines, diffSummary } from "@/lib/prompt-diff";
 import { getConsoleDb } from "@/lib/dal";
-import { createPromptVersionAction, setActivePromptVersionAction } from "../actions";
+import {
+  createPromptVersionAction,
+  setActivePromptVersionAction,
+} from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -77,9 +87,17 @@ function one(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function pickVersion(prompt: PromptDetail, value: string | undefined, fallback: number) {
+function pickVersion(
+  prompt: PromptDetail,
+  value: string | undefined,
+  fallback: number,
+) {
   const parsed = Number.parseInt(value ?? "", 10);
-  return prompt.versions.find((version) => version.version === parsed) ?? prompt.versions.find((version) => version.version === fallback) ?? prompt.versions[0];
+  return (
+    prompt.versions.find((version) => version.version === parsed) ??
+    prompt.versions.find((version) => version.version === fallback) ??
+    prompt.versions[0]
+  );
 }
 
 function pairedDiffRows(base: string, candidate: string) {
@@ -89,7 +107,14 @@ function pairedDiffRows(base: string, candidate: string) {
   return Array.from({ length: max }, (_, index) => {
     const left = baseLines[index];
     const right = candidateLines[index];
-    const type = left === right ? "same" : left === undefined ? "added" : right === undefined ? "removed" : "changed";
+    const type =
+      left === right
+        ? "same"
+        : left === undefined
+          ? "added"
+          : right === undefined
+            ? "removed"
+            : "changed";
     return {
       line: index + 1,
       type,
@@ -105,15 +130,23 @@ function score(value: { toString(): string } | null | undefined) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
-function latestForVersion(evalRuns: PromptEvalRun[], versionId: string | undefined) {
+function latestForVersion(
+  evalRuns: PromptEvalRun[],
+  versionId: string | undefined,
+) {
   return evalRuns.find((run) => run.promptVersionId === versionId) ?? null;
 }
 
-function movement(latest: PromptEvalRun | null, previous: PromptEvalRun | null) {
+function movement(
+  latest: PromptEvalRun | null,
+  previous: PromptEvalRun | null,
+) {
   if (!latest) return { regressions: 0, improvements: 0 };
   if (!previous) return { regressions: 0, improvements: 0 };
 
-  const previousByCase = new Map(previous.results.map((result) => [result.evalCaseId, result]));
+  const previousByCase = new Map(
+    previous.results.map((result) => [result.evalCaseId, result]),
+  );
   let regressions = 0;
   let improvements = 0;
   for (const result of latest.results) {
@@ -177,12 +210,21 @@ function resultStateLabel(status: string | null | undefined) {
   return "失败";
 }
 
-function promptVersionLabel(version: PromptDetail["versions"][number] | undefined, suffix: string) {
+function promptVersionLabel(
+  version: PromptDetail["versions"][number] | undefined,
+  suffix: string,
+) {
   if (!version) return suffix;
   return `v${version.version} ${suffix}`;
 }
 
-export default async function PromptDetailPage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
+export default async function PromptDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Params;
+  searchParams: SearchParams;
+}) {
   const prisma = await getConsoleDb();
   await expireEvalRuns(prisma);
   const { id } = await params;
@@ -214,7 +256,10 @@ export default async function PromptDetailPage({ params, searchParams }: { param
           dataset: true,
           promptVersion: true,
           modelConfig: { include: { provider: true } },
-          results: { include: { evalCase: true }, orderBy: { createdAt: "asc" } },
+          results: {
+            include: { evalCase: true },
+            orderBy: { createdAt: "asc" },
+          },
         },
         orderBy: { createdAt: "desc" },
         take: 10,
@@ -232,26 +277,47 @@ export default async function PromptDetailPage({ params, searchParams }: { param
     ]);
   }
 
-
   if (!prompt) notFound();
 
   const highest = prompt.versions[0]?.version ?? 1;
-  const baseline = pickVersion(prompt, one(rawParams.base), prompt.activeVersion?.version ?? highest);
+  const baseline = pickVersion(
+    prompt,
+    one(rawParams.base),
+    prompt.activeVersion?.version ?? highest,
+  );
   const candidate = pickVersion(prompt, one(rawParams.compare), highest);
   const selectedDatasetId = one(rawParams.dataset)?.trim() || datasets[0]?.id;
-  const selectedDataset = datasets.find((dataset) => dataset.id === selectedDatasetId) ?? datasets[0];
+  const selectedDataset =
+    datasets.find((dataset) => dataset.id === selectedDatasetId) ?? datasets[0];
   const selectedModel = models[0];
-  const diff = baseline && candidate ? diffLines(baseline.content, candidate.content) : [];
+  const diff =
+    baseline && candidate ? diffLines(baseline.content, candidate.content) : [];
   const diffStats = diffSummary(diff);
-  const diffRows = baseline && candidate ? pairedDiffRows(baseline.content, candidate.content) : [];
-  const scopedRuns = evalRuns.filter((run) => run.datasetId === selectedDataset?.id);
+  const diffRows =
+    baseline && candidate
+      ? pairedDiffRows(baseline.content, candidate.content)
+      : [];
+  const scopedRuns = evalRuns.filter(
+    (run) => run.datasetId === selectedDataset?.id,
+  );
   const latestRun = latestForVersion(scopedRuns, candidate?.id);
-  const previousRun = scopedRuns.find((run) => run.id !== latestRun?.id && run.promptVersionId === baseline?.id) ?? null;
+  const previousRun =
+    scopedRuns.find(
+      (run) => run.id !== latestRun?.id && run.promptVersionId === baseline?.id,
+    ) ?? null;
   const pass = latestRun ? passRate(latestRun.results) : null;
   const moves = movement(latestRun, previousRun);
-  const failedResults = latestRun?.results.filter((result) => result.pass === false || result.status === "needs_review") ?? [];
-  const manualReviewCount = latestRun?.results.filter((result) => result.status === "needs_review").length ?? 0;
-  const linkedTraceCount = prompt.versions.reduce((sum, version) => sum + version._count.traceRuns, 0);
+  const failedResults =
+    latestRun?.results.filter(
+      (result) => result.pass === false || result.status === "needs_review",
+    ) ?? [];
+  const manualReviewCount =
+    latestRun?.results.filter((result) => result.status === "needs_review")
+      .length ?? 0;
+  const linkedTraceCount = prompt.versions.reduce(
+    (sum, version) => sum + version._count.traceRuns,
+    0,
+  );
   const matrices = matrixRows(latestRun);
 
   return (
@@ -260,15 +326,9 @@ export default async function PromptDetailPage({ params, searchParams }: { param
         <div>
           <p className="eyebrow">回归工作台</p>
           <h1>{prompt.name}</h1>
-          <p>{prompt.project.name} · {prompt.description ?? "提示词发布工作区"}</p>
-        </div>
-        <div className="tf-regression-title-actions">
-          <Button size="icon-sm" variant="ghost" aria-label="复制提示词编号">
-            <Copy aria-hidden="true" />
-          </Button>
-          <Button size="icon-sm" variant="ghost" aria-label="收藏提示词">
-            <Star aria-hidden="true" />
-          </Button>
+          <p>
+            {prompt.project.name} · {prompt.description ?? "提示词发布工作区"}
+          </p>
         </div>
       </header>
 
@@ -276,10 +336,14 @@ export default async function PromptDetailPage({ params, searchParams }: { param
         <form method="get" className="tf-regression-selectors">
           <label>
             <span>基线版本</span>
-            <NativeSelect name="base" defaultValue={String(baseline?.version ?? "")}>
+            <NativeSelect
+              name="base"
+              defaultValue={String(baseline?.version ?? "")}
+            >
               {prompt.versions.map((version) => (
                 <NativeSelectOption key={version.id} value={version.version}>
-                  v{version.version}{prompt.activeVersionId === version.id ? " · 现行" : ""}
+                  v{version.version}
+                  {prompt.activeVersionId === version.id ? " · 现行" : ""}
                 </NativeSelectOption>
               ))}
             </NativeSelect>
@@ -287,18 +351,27 @@ export default async function PromptDetailPage({ params, searchParams }: { param
           <ArrowRight aria-hidden="true" className="tf-regression-arrow" />
           <label>
             <span>候选版本</span>
-            <NativeSelect name="compare" defaultValue={String(candidate?.version ?? "")}>
+            <NativeSelect
+              name="compare"
+              defaultValue={String(candidate?.version ?? "")}
+            >
               {prompt.versions.map((version) => (
                 <NativeSelectOption key={version.id} value={version.version}>
-                  v{version.version}{version.status === "draft" ? " · 草稿" : ""}
+                  v{version.version}
+                  {version.status === "draft" ? " · 草稿" : ""}
                 </NativeSelectOption>
               ))}
             </NativeSelect>
           </label>
           <label>
             <span>数据集</span>
-            <NativeSelect name="dataset" defaultValue={selectedDataset?.id ?? ""}>
-              {datasets.length === 0 ? <NativeSelectOption value="">暂无数据集</NativeSelectOption> : null}
+            <NativeSelect
+              name="dataset"
+              defaultValue={selectedDataset?.id ?? ""}
+            >
+              {datasets.length === 0 ? (
+                <NativeSelectOption value="">暂无数据集</NativeSelectOption>
+              ) : null}
               {datasets.map((dataset) => (
                 <NativeSelectOption key={dataset.id} value={dataset.id}>
                   {dataset.name}
@@ -306,21 +379,41 @@ export default async function PromptDetailPage({ params, searchParams }: { param
               ))}
             </NativeSelect>
           </label>
-          <Button type="submit" size="sm" variant="outline">应用</Button>
+          <Button type="submit" size="sm" variant="outline">
+            应用
+          </Button>
         </form>
 
         <div className="tf-release-actions">
-          <ActionForm action={runEvalDatasetAction}><input type="hidden" name="requestId" value={randomUUID()} />
-            <input type="hidden" name="datasetId" value={selectedDataset?.id ?? ""} />
-            <input type="hidden" name="promptVersionId" value={candidate?.id ?? ""} />
-            <input type="hidden" name="modelConfigId" value={selectedModel?.id ?? ""} />
-            <Button type="submit" size="sm" disabled={!selectedDataset || !candidate || !selectedModel}>
+          <ActionForm action={runEvalDatasetAction}>
+            <input type="hidden" name="requestId" value={randomUUID()} />
+            <input
+              type="hidden"
+              name="datasetId"
+              value={selectedDataset?.id ?? ""}
+            />
+            <input
+              type="hidden"
+              name="promptVersionId"
+              value={candidate?.id ?? ""}
+            />
+            <input
+              type="hidden"
+              name="modelConfigId"
+              value={selectedModel?.id ?? ""}
+            />
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!selectedDataset || !candidate || !selectedModel}
+            >
               <Play aria-hidden="true" />
               运行评测
             </Button>
           </ActionForm>
           {candidate && prompt.activeVersionId !== candidate.id ? (
-            <ActionForm action={setActivePromptVersionAction}><input type="hidden" name="requestId" value={randomUUID()} />
+            <ActionForm action={setActivePromptVersionAction}>
+              <input type="hidden" name="requestId" value={randomUUID()} />
               <input type="hidden" name="promptId" value={prompt.id} />
               <input type="hidden" name="versionId" value={candidate.id} />
               <Button type="submit" size="sm" variant="outline">
@@ -330,7 +423,8 @@ export default async function PromptDetailPage({ params, searchParams }: { param
             </ActionForm>
           ) : null}
           {baseline && prompt.activeVersionId !== baseline.id ? (
-            <ActionForm action={setActivePromptVersionAction}><input type="hidden" name="requestId" value={randomUUID()} />
+            <ActionForm action={setActivePromptVersionAction}>
+              <input type="hidden" name="requestId" value={randomUUID()} />
               <input type="hidden" name="promptId" value={prompt.id} />
               <input type="hidden" name="versionId" value={baseline.id} />
               <Button type="submit" size="sm" variant="outline">
@@ -349,7 +443,8 @@ export default async function PromptDetailPage({ params, searchParams }: { param
               <div>
                 <CardTitle>提示词差异</CardTitle>
                 <CardDescription>
-                  {promptVersionLabel(baseline, "基线")} → {promptVersionLabel(candidate, "候选")}
+                  {promptVersionLabel(baseline, "基线")} →{" "}
+                  {promptVersionLabel(candidate, "候选")}
                 </CardDescription>
               </div>
               <CardAction className="tf-panel-actions">
@@ -367,12 +462,17 @@ export default async function PromptDetailPage({ params, searchParams }: { param
                 <div className="tf-diff-grid">
                   <div className="tf-diff-column">
                     <div className="tf-diff-head">
-                      <Badge variant="outline">{promptVersionLabel(baseline, "基线")}</Badge>
+                      <Badge variant="outline">
+                        {promptVersionLabel(baseline, "基线")}
+                      </Badge>
                       <span>{baseline?._count.traceRuns ?? 0} 条关联追踪</span>
                     </div>
                     <div className="tf-diff-code">
                       {diffRows.map((row) => (
-                        <div key={`base-${row.line}`} className={`tf-diff-row ${row.type === "removed" || row.type === "changed" ? "removed" : ""}`}>
+                        <div
+                          key={`base-${row.line}`}
+                          className={`tf-diff-row ${row.type === "removed" || row.type === "changed" ? "removed" : ""}`}
+                        >
                           <span>{row.line}</span>
                           <code>{row.base || " "}</code>
                         </div>
@@ -381,12 +481,17 @@ export default async function PromptDetailPage({ params, searchParams }: { param
                   </div>
                   <div className="tf-diff-column">
                     <div className="tf-diff-head">
-                      <Badge variant="secondary">{promptVersionLabel(candidate, "候选")}</Badge>
+                      <Badge variant="secondary">
+                        {promptVersionLabel(candidate, "候选")}
+                      </Badge>
                       <span>{candidate?._count.evalRuns ?? 0} 次评测</span>
                     </div>
                     <div className="tf-diff-code">
                       {diffRows.map((row) => (
-                        <div key={`candidate-${row.line}`} className={`tf-diff-row ${row.type === "added" || row.type === "changed" ? "added" : ""}`}>
+                        <div
+                          key={`candidate-${row.line}`}
+                          className={`tf-diff-row ${row.type === "added" || row.type === "changed" ? "added" : ""}`}
+                        >
                           <span>{row.line}</span>
                           <code>{row.candidate || " "}</code>
                         </div>
@@ -407,7 +512,9 @@ export default async function PromptDetailPage({ params, searchParams }: { param
                 </div>
                 {selectedDataset ? (
                   <Button asChild size="sm" variant="outline">
-                    <Link href={`/evals/${selectedDataset.id}`}>打开数据集</Link>
+                    <Link href={`/evals/${selectedDataset.id}`}>
+                      打开数据集
+                    </Link>
                   </Button>
                 ) : null}
               </CardHeader>
@@ -419,27 +526,33 @@ export default async function PromptDetailPage({ params, searchParams }: { param
                         <TableHead>数据集</TableHead>
                         <TableHead>样本</TableHead>
                         <TableHead>运行</TableHead>
-                        <TableHead>最新通过率</TableHead>
-                        <TableHead>Δ</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {datasets.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={5}>暂无数据集，请在评测工作区创建。</TableCell>
+                          <TableCell colSpan={3}>
+                            暂无数据集，请在评测工作区创建。
+                          </TableCell>
                         </TableRow>
                       ) : (
                         datasets.map((dataset) => (
                           <TableRow key={dataset.id}>
                             <TableCell>
-                              <Link className="tf-run-link" href={`/evals/${dataset.id}`}>{dataset.name}</Link>
+                              <Link
+                                className="tf-run-link"
+                                href={`/evals/${dataset.id}`}
+                              >
+                                {dataset.name}
+                              </Link>
                             </TableCell>
-                            <TableCell>{formatNumber(dataset._count.cases)}</TableCell>
-                            <TableCell>{formatNumber(dataset._count.runs)}</TableCell>
-                            <TableCell>{pass === null ? "—" : formatPercent(pass)}</TableCell>
-                            <TableCell className={moves.regressions > 0 ? "tf-danger-text" : "tf-ok-text"}>
-                              {moves.regressions > 0 ? `↓ ${moves.regressions}` : `↑ ${moves.improvements}`}
+                            <TableCell>
+                              {formatNumber(dataset._count.cases)}
                             </TableCell>
+                            <TableCell>
+                              {formatNumber(dataset._count.runs)}
+                            </TableCell>
+
                           </TableRow>
                         ))
                       )}
@@ -469,8 +582,17 @@ export default async function PromptDetailPage({ params, searchParams }: { param
                   {matrices.map((row) => (
                     <div className="tf-assertion-row" key={row.label}>
                       <strong>{row.label}</strong>
-                      {[row.policy, row.action, row.tone, row.logic, row.overall].map((value, index) => (
-                        <span key={`${row.label}-${index}`} className={heatClass(value)}>
+                      {[
+                        row.policy,
+                        row.action,
+                        row.tone,
+                        row.logic,
+                        row.overall,
+                      ].map((value, index) => (
+                        <span
+                          key={`${row.label}-${index}`}
+                          className={heatClass(value)}
+                        >
                           {value}%
                         </span>
                       ))}
@@ -484,13 +606,17 @@ export default async function PromptDetailPage({ params, searchParams }: { param
               <CardHeader className="tf-panel-head">
                 <div>
                   <CardTitle>评测对比</CardTitle>
-                  <CardDescription>通过率、延迟、成本和失败域变化</CardDescription>
+                  <CardDescription>
+                    通过率、延迟、成本和失败域变化
+                  </CardDescription>
                 </div>
               </CardHeader>
               <CardContent className="tf-compare-stack">
                 {latestRun && previousRun ? (
                   <Button asChild size="sm" variant="outline">
-                    <Link href={`/evals/compare?baseRun=${previousRun.id}&compareRun=${latestRun.id}`}>
+                    <Link
+                      href={`/evals/compare?baseRun=${previousRun.id}&compareRun=${latestRun.id}`}
+                    >
                       打开对比
                       <ExternalLink aria-hidden="true" />
                     </Link>
@@ -498,19 +624,32 @@ export default async function PromptDetailPage({ params, searchParams }: { param
                 ) : null}
                 <div>
                   <span>通过率</span>
-                  <strong>{previousRun ? formatPercent(passRate(previousRun.results)) : "—"} → {pass === null ? "—" : formatPercent(pass)}</strong>
+                  <strong>
+                    {previousRun
+                      ? formatPercent(passRate(previousRun.results))
+                      : "—"}{" "}
+                    → {pass === null ? "—" : formatPercent(pass)}
+                  </strong>
                 </div>
                 <div>
                   <span>P50 延迟</span>
-                  <strong>{formatMs(previousRun?.durationMs)} → {formatMs(latestRun?.durationMs)}</strong>
+                  <strong>
+                    {formatMs(previousRun?.durationMs)} →{" "}
+                    {formatMs(latestRun?.durationMs)}
+                  </strong>
                 </div>
                 <div>
                   <span>每千轮成本</span>
-                  <strong>${formatMoney(previousRun?.totalCost)} → ${formatMoney(latestRun?.totalCost)}</strong>
+                  <strong>
+                    ${formatMoney(previousRun?.totalCost)} → $
+                    {formatMoney(latestRun?.totalCost)}
+                  </strong>
                 </div>
                 <div>
                   <span>失败域</span>
-                  <strong>回归 {moves.regressions} · 改善 {moves.improvements}</strong>
+                  <strong>
+                    回归 {moves.regressions} · 改善 {moves.improvements}
+                  </strong>
                 </div>
               </CardContent>
             </Card>
@@ -520,7 +659,9 @@ export default async function PromptDetailPage({ params, searchParams }: { param
             <CardHeader className="tf-panel-head">
               <div>
                 <CardTitle>近期评测运行</CardTitle>
-                <CardDescription>历史记录可继续用于人工复核和对比</CardDescription>
+                <CardDescription>
+                  历史记录可继续用于人工复核和对比
+                </CardDescription>
               </div>
             </CardHeader>
             <CardContent>
@@ -547,9 +688,24 @@ export default async function PromptDetailPage({ params, searchParams }: { param
                         <TableRow key={run.id}>
                           <TableCell>{compactId(run.id)}</TableCell>
                           <TableCell>{run.dataset.name}</TableCell>
-                          <TableCell>v{run.promptVersion?.version ?? "—"}</TableCell>
-                          <TableCell><Badge variant="outline" className={run.status === "completed" ? "tf-status success" : "tf-status running"}>{evalStatusLabel(run.status)}</Badge></TableCell>
-                          <TableCell>{formatPercent(passRate(run.results))}</TableCell>
+                          <TableCell>
+                            v{run.promptVersion?.version ?? "—"}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={
+                                run.status === "completed"
+                                  ? "tf-status success"
+                                  : "tf-status running"
+                              }
+                            >
+                              {evalStatusLabel(run.status)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {formatPercent(passRate(run.results))}
+                          </TableCell>
                           <TableCell>${formatMoney(run.totalCost)}</TableCell>
                           <TableCell>
                             <Button asChild size="xs" variant="outline">
@@ -571,16 +727,31 @@ export default async function PromptDetailPage({ params, searchParams }: { param
             <CardHeader className="tf-panel-head">
               <div>
                 <CardTitle>评测摘要</CardTitle>
-                <CardDescription>{selectedDataset?.name ?? "未选择数据集"}</CardDescription>
+                <CardDescription>
+                  {selectedDataset?.name ?? "未选择数据集"}
+                </CardDescription>
               </div>
-              {latestRun ? <Badge variant="outline" className="tf-status success">{evalStatusLabel(latestRun.status)}</Badge> : <Badge variant="outline">暂无评测</Badge>}
+              {latestRun ? (
+                <Badge variant="outline" className="tf-status success">
+                  {evalStatusLabel(latestRun.status)}
+                </Badge>
+              ) : (
+                <Badge variant="outline">暂无评测</Badge>
+              )}
             </CardHeader>
             <CardContent className="tf-evidence-stack">
               <section className="tf-eval-summary-grid">
                 <div>
                   <small>通过率</small>
                   <strong>{pass === null ? "—" : formatPercent(pass)}</strong>
-                  <span className={moves.regressions > 0 ? "danger" : "ok"}>{moves.regressions > 0 ? "↓" : "↑"} {moves.regressions || moves.improvements} 对比基线</span>
+                  <span className={moves.regressions > 0 ? "danger" : "muted"}>
+                    {latestRun && previousRun
+                      ? "回归 " +
+                        moves.regressions +
+                        " · 改善 " +
+                        moves.improvements
+                      : "暂无对比结果"}
+                  </span>
                 </div>
                 <div>
                   <small>回归</small>
@@ -592,68 +763,121 @@ export default async function PromptDetailPage({ params, searchParams }: { param
                 </div>
                 <div>
                   <small>总样本</small>
-                  <strong>{formatNumber(latestRun?.results.length ?? selectedDataset?._count.cases ?? 0)}</strong>
+                  <strong>
+                    {formatNumber(
+                      latestRun?.results.length ??
+                        selectedDataset?._count.cases ??
+                        0,
+                    )}
+                  </strong>
                 </div>
               </section>
 
               <section data-source="database">
                 <div className="tf-section-line">
                   <h3>人工复核</h3>
-                  <Badge variant="secondary">{formatNumber(manualReviewCount)} 待处理</Badge>
+                  <Badge variant="secondary">
+                    {formatNumber(manualReviewCount)} 待处理
+                  </Badge>
                 </div>
                 <div className="tf-failed-case-list">
-                  {(failedResults.length > 0 ? failedResults.slice(0, 3) : []).map((result) => (
+                  {(failedResults.length > 0
+                    ? failedResults.slice(0, 3)
+                    : []
+                  ).map((result) => (
                     <div key={result.id}>
-                      <strong>{result.evalCase.tags[0] ?? result.evalCase.assertionType}</strong>
+                      <strong>
+                        {result.evalCase.tags[0] ??
+                          result.evalCase.assertionType}
+                      </strong>
                       <span>{result.evalCase.input.slice(0, 44)}</span>
                       <em>{resultStateLabel(result.status)}</em>
                     </div>
                   ))}
-                  {failedResults.length === 0 ? <p>最近一次运行没有失败样本。</p> : null}
+                  {failedResults.length === 0 ? (
+                    <p>
+                      {latestRun
+                        ? "最近一次运行没有失败样本。"
+                        : "尚未运行评测。"}
+                    </p>
+                  ) : null}
                 </div>
                 {latestRun ? (
-                  <Link className="tf-rail-link" href={`/evals/runs/${latestRun.id}`}>打开人工复核</Link>
+                  <Link
+                    className="tf-rail-link"
+                    href={`/evals/runs/${latestRun.id}`}
+                  >
+                    打开人工复核
+                  </Link>
                 ) : null}
               </section>
 
               <section data-source="database">
                 <div className="tf-section-line">
                   <h3>失败样本</h3>
-                  <Badge variant="destructive">{formatNumber(failedResults.length || moves.regressions)}</Badge>
+                  <Badge variant="destructive">
+                    {formatNumber(failedResults.length || moves.regressions)}
+                  </Badge>
                 </div>
                 <div className="tf-failed-case-list">
-                  {failedResults.slice(0, 3).map((item) => <div key={item.id}><strong>{item.evalCase.tags[0] ?? item.assertionType}</strong><span>{item.evalCase.input.slice(0,44)}</span><Link href={"/evals/runs/" + item.evalRunId}>打开评测结果</Link></div>)}
-                  {failedResults.length === 0 ? <p>暂无失败样本。</p> : null}
+                  {failedResults.slice(0, 3).map((item) => (
+                    <div key={item.id}>
+                      <strong>
+                        {item.evalCase.tags[0] ?? item.assertionType}
+                      </strong>
+                      <span>{item.evalCase.input.slice(0, 44)}</span>
+                      <Link href={"/evals/runs/" + item.evalRunId}>
+                        打开评测结果
+                      </Link>
+                    </div>
+                  ))}
+                  {failedResults.length === 0 ? (
+                    <p>{latestRun ? "暂无失败样本。" : "暂无评测结果。"}</p>
+                  ) : null}
                 </div>
               </section>
 
               <section>
                 <div className="tf-section-line">
                   <h3>追踪证据</h3>
-                  <Badge variant="secondary">{formatNumber(linkedTraceCount)} 已关联</Badge>
+                  <Badge variant="secondary">
+                    {formatNumber(linkedTraceCount)} 已关联
+                  </Badge>
                 </div>
-                <p className="tf-rail-copy">存在关联时会指向可用追踪运行；否则该数量来自确定性暂无评测，用于发布复核。</p>
-                <Link className="tf-rail-link" href={`/traces?promptId=${encodeURIComponent(prompt.id)}`}>打开追踪证据</Link>
-              </section>
-
-              <section className="tf-release-checklist">
-                <h3>发布检查清单</h3>
-                <div><CheckCircle2 aria-hidden="true" /><span>评测已完成</span><strong>{latestRun ? "完成" : "模拟"}</strong></div>
-                <div><CheckCircle2 aria-hidden="true" /><span>无关键失败样本</span><strong>{failedResults.length === 0 ? "正常" : failedResults.length}</strong></div>
-                <div><CheckCircle2 aria-hidden="true" /><span>人工复核已解决</span><strong>{manualReviewCount === 0 ? "正常" : `${manualReviewCount} 待处理`}</strong></div>
-                <div><CheckCircle2 aria-hidden="true" /><span>关联追踪已检查</span><strong>{formatNumber(linkedTraceCount)}</strong></div>
+                <p className="tf-rail-copy">
+                  查看与此提示词版本关联的真实追踪记录，作为发布复核的补充证据。
+                </p>
+                <Link
+                  className="tf-rail-link"
+                  href={`/traces?promptId=${encodeURIComponent(prompt.id)}`}
+                >
+                  打开追踪证据
+                </Link>
               </section>
 
               <section className="tf-create-version">
                 <h3>创建候选版本</h3>
-                <ActionForm className="stack-form" action={createPromptVersionAction}><input type="hidden" name="requestId" value={randomUUID()} />
+                <ActionForm
+                  className="stack-form"
+                  action={createPromptVersionAction}
+                >
+                  <input type="hidden" name="requestId" value={randomUUID()} />
                   <input type="hidden" name="promptId" value={prompt.id} />
-                  <textarea name="content" required rows={8} defaultValue={candidate?.content ?? prompt.activeVersion?.content ?? ""} />
+                  <textarea
+                    name="content"
+                    required
+                    rows={8}
+                    defaultValue={
+                      candidate?.content ?? prompt.activeVersion?.content ?? ""
+                    }
+                  />
                   <label className="checkbox-row">
                     <input name="publish" type="checkbox" />
                     立即发布
                   </label>
-                  <Button type="submit" size="sm">保存新版本</Button>
+                  <Button type="submit" size="sm">
+                    保存新版本
+                  </Button>
                 </ActionForm>
               </section>
             </CardContent>

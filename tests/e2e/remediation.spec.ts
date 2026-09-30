@@ -58,7 +58,7 @@ test("all dashboard panels remain, real zero stays zero, and empty data is expli
   await login(page);
   await page.goto("/dashboard?projectId=" + project);
   await expect(page.getByRole("heading", { name: "治理总览", exact: true })).toBeVisible();
-  for (const text of ["每日用量", "模型 / 供应商成本拆分", "供应商健康", "限流失败", "备用切换链路", "流式中断原因"]) await expect(page.getByText(text, { exact: true })).toBeVisible();
+  for (const text of ["请求趋势", "模型 / 供应商成本拆分", "供应商健康", "限流失败", "备用切换链路", "流式中断原因"]) await expect(page.getByText(text, { exact: true })).toBeVisible();
   await expect(page.locator('[data-source="mock"]')).toHaveCount(0);
   const requestKpi = page.locator(".tf-kpi-card").filter({ hasText: "请求量" });
   expect(Number((await requestKpi.locator("strong").innerText()).replace(/\D/g, ""))).toBeGreaterThanOrEqual(24);

@@ -1,228 +1,43 @@
-# TraceForge UI Redesign Plan
-
-## Goal
-
-Rebuild the current TraceForge console into a high-fidelity product UI matching the Round 2 prototypes:
-
-- V1 becomes the overall console shell and Incident Command direction.
-- V2 contributes dense tables and live governance panels.
-- V3 becomes the independent Prompt/Eval Regression Studio module.
-
-The redesign should be usable against current database data. Data that does not exist yet should come from explicit mock view-model adapters so the UI can reach the prototype fidelity without forcing premature schema changes.
-
-## Prototype Targets
-
-| Target | Prototype | Main Route |
-| --- | --- | --- |
-| Incident Command | `traceforge-ui-r2-01-incident-command.png` | `/traces`, `/traces/[id]` |
-| Live Governance Dashboard | `traceforge-ui-r2-02-live-governance-dashboard.png` | `/dashboard` |
-| Regression Studio | `traceforge-ui-r2-03-regression-studio.png` | `/prompts/[id]`, `/evals`, `/evals/runs/[id]` |
-
-## Design Principles
-
-- Keep a single TraceForge shell: deep forest sidebar, compact top command bar, off-white workspace, graphite type, red/amber/green operational states, restrained blue links.
-- Use dense but readable operational layouts: compact tables, rails, chips, status badges, segmented controls, and small charts with actual meaning.
-- Keep cards shallow: panels are allowed, nested cards are not.
-- Use 6px or smaller radii for console surfaces.
-- Use the Incident Command page to sell the core story: filter failed TraceRuns, inspect Waterfall/Span Tree, identify Responsibility.
-- Use Regression Studio for Prompt/Eval instead of blending Prompt quality into Trace responsibility.
-- Avoid unsupported product promises in the UI: no Alerts, ticketing, saved views, stakeholder approval, or guardrail center until data and workflows exist.
-
-## Current Data Coverage
-
-### Directly Supported
-
-- `TraceRun`: status, error code, input/output previews, tokens, cost, latency, usage source, timestamps.
-- `TraceSpan`: parent tree, type, model, provider, tokens, cost, latency, status, error code, error summary.
-- `TraceEvent`: stream events, fallback events, chunk counts, event payloads.
-- `Prompt` / `PromptVersion`: active version, version history, content, diff, publish/rollback pointer.
-- `EvalDataset` / `EvalCase` / `EvalRun` / `EvalResult`: datasets, cases, runs, pass/fail, score, duration, cost, manual review status.
-- `UsageDaily`: request, success/failure, token, cost, average latency trends.
-- `ModelProvider` / `ModelConfig` / `ApiKey`: provider/model metadata and configured rate limits.
-
-### Derived From Current Data
-
-- Provider health: aggregate spans by provider/model over the selected time window.
-- Failure rate, P95 latency, cost and token KPIs: aggregate TraceRun and TraceSpan rows.
-- Fallback chain summary: aggregate `fallback_triggered` and `fallback_failed` events.
-- Stream interruption reasons: group TraceRun/TraceSpan error codes.
-- Slowest/costliest span: compute from spans in the selected run.
-- Eval pass rate and regression counts: compare EvalRun result sets.
-
-### Mock Until Productized
-
-Create a mock view-model layer for:
-
-- Live ingest rate and "updated seconds ago" freshness.
-- Rate-limit utilization buckets when only configured limits exist.
-- Release checklist items not directly stored yet.
-- Linked Trace evidence counts when a direct relation is missing.
-- Small trend sparklines when the selected time window has too little real data.
-
-Mock objects must include a `source: "mock" | "derived" | "live"` marker internally. The UI can hide that marker in normal mode, but developers should be able to audit it.
-
-## Implementation Architecture
-
-### 1. Design Foundation
-
-Create reusable console primitives before page rewrites:
-
-- `ConsoleShell`: sidebar, route state, account footer, responsive collapse behavior.
-- `TopCommandBar`: project selector, global search, time range, live indicator, environment selector.
-- `MetricStrip`: compact KPI cells with delta and micro trend.
-- `StatusBadge`, `DomainBadge`, `SourceBadge`.
-- `FilterBar`: chips, selects, date ranges, reset actions.
-- `DataTable`: dense table styling, selected row, inline drawer pattern.
-- `GovernanceRail`: right-side factual panels.
-- `MiniTrend`, `InlineBars`, `Heatmap`.
-- `WaterfallTimeline` and `SpanTreeTable`.
-- `PromptDiffEditor` and `EvalEvidenceRail`.
-
-Do this without adding dependencies unless explicitly approved. Use CSS, native elements, and existing React/Next primitives first.
-
-### 2. View-Model Adapters
-
-Keep Prisma queries close to each route, but normalize display data before rendering.
-
-Recommended files:
-
-- `lib/ui-mocks.ts`: deterministic mock generators for unsupported data.
-- `lib/ui-metrics.ts`: shared p95, average, grouping, delta, trend helpers.
-- `lib/ui-view-models.ts`: conversion helpers for Trace, Dashboard, Prompt, and Eval screens.
-
-Rules:
-
-- Real data wins over mock data.
-- Mock data should be deterministic from project id, route id, or date range so screenshots are stable.
-- Never write mock data to the database.
-- Do not expand Prisma schema only to satisfy prototype decoration.
-
-### 3. Global Shell
-
-Update `app/console-shell.tsx` and related CSS:
-
-- Use the Round 2 deep-green sidebar.
-- Keep only supported primary nav: Dashboard, Chat, TraceRuns, Prompt, Eval.
-- Remove prototype-only Alerts until implemented.
-- Add route active state and compact icon+label treatment.
-- Add top command bar support per console route.
-
-### 4. Incident Command
-
-Target routes:
-
-- `/traces`: dense split view with TraceRun list and selected run summary.
-- `/traces/[id]`: deep-link version of the same incident detail.
-
-Work:
-
-- Replace the current table-only TraceRun list with left list + detail composition.
-- Reuse current filters but render them as compact chips and selects.
-- Move Waterfall and Span Tree into the center work area.
-- Add right rail: Responsibility, fallback events, rate-limit facts, provider health, slowest span, costliest span.
-- Use mock or derived data for provider health and rate-limit utilization.
-
-Verification:
-
-- Stage 3 demo data shows success, running, failed, fallback, rate-limited, revoked-key cases.
-- A failed run demonstrates the three-step story without opening another page.
-- `/traces/[id]` remains linkable and useful.
-
-### 5. Live Governance Dashboard
-
-Target route:
-
-- `/dashboard`
-
-Work:
-
-- Rework KPI cards into the compact top metric strip.
-- Replace the current lower sections with:
-  - Dense TraceRun table and inline selected row drawer.
-  - Right governance rail for provider health, rate-limit failures, fallback chain, stream interruption reasons.
-  - Bottom UsageDaily trend and model/provider cost table.
-- Keep existing real calculations from Dashboard where possible.
-- Add deterministic mock data only for live ingest and utilization visuals.
-
-Verification:
-
-- Stage 4 demo data and `scripts/aggregate-usage-daily.mjs` produce non-empty dashboard states.
-- Empty database still renders a useful mock-backed prototype state when enabled.
-- `npm run build` passes.
-
-### 6. Regression Studio
-
-Target routes:
-
-- `/prompts/[id]`
-- `/evals`
-- `/evals/runs/[id]`
-- `/evals/compare`
-
-Work:
-
-- Convert Prompt detail into the Regression Studio composition:
-  - Header with prompt name, baseline/candidate selectors, dataset selector, Run eval, Promote, Rollback.
-  - Center side-by-side Prompt diff.
-  - Right Eval evidence rail.
-  - Bottom Eval datasets, assertion matrix, compare runs, recent eval runs.
-- Keep Prompt quality separate from Trace responsibility attribution.
-- Use real EvalRun/EvalResult data for pass rate and failures.
-- Mock assertion matrix grouping when current cases lack enough tags.
-
-Verification:
-
-- Stage 5 and Stage 6 demo data produce at least two prompt versions and comparable EvalRuns.
-- Manual review states remain actionable.
-- Failed Eval results link back to available evidence, using mock links only when no direct TraceRun exists.
-
-### 7. Responsive And Hardening Pass
-
-Desktop is the primary target, but the UI must not break on smaller screens.
-
-Work:
-
-- At tablet/mobile widths, collapse right rails below the main content.
-- Keep tables horizontally scrollable instead of crushing text.
-- Preserve action access on mobile; do not hide critical filters.
-- Check text overflow in badges, buttons, table cells, and editor headers.
-- Add empty, loading, error, and mock-backed states for every rewritten route.
-
-Verification:
-
-- Check at 1440px, 1280px, 980px, and 390px widths.
-- No overlapping text, clipped controls, or unreadable table drawers.
-- Keyboard focus remains visible.
-
-## Suggested Order
-
-1. Prototype docs and plan in `docs/ui-redesign`.
-2. Design tokens and shared console components.
-3. Mock/view-model layer.
-4. Shell/top command bar/navigation.
-5. Incident Command Trace screens.
-6. Dashboard live governance screen.
-7. Regression Studio Prompt/Eval screens.
-8. Responsive and visual QA pass.
-9. Remove or clearly mark any remaining unsupported mock-only UI.
-
-## Acceptance Criteria
-
-- The app visually matches the Round 2 prototypes at high fidelity on desktop.
-- Supported pages can render from current database data.
-- Missing data is supplied only through explicit mock adapters.
-- Unsupported navigation and product promises are not shown as real features.
-- `npm run build` passes.
-- `npx prisma validate` passes.
-- Core demo scripts still produce useful visible states.
-- Manual visual checks confirm the three target routes match the prototype hierarchy:
-  - `/traces` or `/traces/[id]`
-  - `/dashboard`
-  - `/prompts/[id]` or an equivalent Prompt/Eval workspace route
-
-## Risks
-
-- The prototypes are denser than the current CSS architecture; extracting components first will reduce page-level churn.
-- Some generated prototype text is illustrative; implementation copy should follow the actual product vocabulary in `CONTEXT.md`.
-- Mock data can accidentally look like production truth. Keep mock generation centralized and auditable.
-- Without an icon dependency, some icon polish may need CSS or inline symbols. Do not add a new icon package without approval.
+# Base UI 重构执行计划
+
+更新：2026-09-30。本轮替代旧版模拟数据/深绿三栏设计，不修改 Gateway 与数据库。
+
+- [x] 核对已实现功能，重写当前功能 PRD。
+- [x] 确定视觉系统、信息架构与真实数据约束。
+- [x] 改造 Base UI 共享交互与导航壳层。
+- [x] 重构看板信息层级、趋势和运行表格。
+- [x] 统一 Trace、Chat、Prompt、Eval、登录与空态样式。
+- [x] 验证键盘、移动端和主流程，完成回归与截图。
+
+完成以实际页面、自动化结果和截图为准，不以仅生成静态图片作为交付。
+
+
+## 实际交付与验收（2026-09-30）
+
+- 共享 Button、Input、Tooltip 接入 Base UI；导航保持真实链接语义，键盘 Enter 与侧栏折叠持久化通过。原生 select 与现有业务表单继续保留。
+- 治理总览改为四个主指标、每日请求/失败趋势、三个辅助指标、最近运行、成本/健康与治理事件。查询与未知成本口径保持不变。
+- 顶栏搜索真正跳转到带项目和名称/模型/供应商条件的 Trace 列表，删除未实现的通知、列设置、密度等入口。
+- Trace 瀑布图刻度按实际跨度时长计算；移除固定涨跌数字，将最慢跨度正确标识，未伪装成 P95。
+- Prompt 详情改为自然页面滚动，差异与评测内容不再挤压；移除无依据的发布检查“通过”状态及误用汇总结果的数据集列。
+- Chat 设置提前，Prompt/Eval/登录共用字体、表单、边界与间距。没有更改 Gateway、Prisma schema、认证或付费模型执行逻辑。
+
+| 检查 | 结果 |
+| --- | --- |
+| TypeScript / ESLint / 生产构建 | 通过 |
+| 单元测试 | 9 / 9 通过 |
+| 全套 E2E | 44 / 44 通过（原有 43 + 新增键盘搜索） |
+| 最终呈现修正后的定向 E2E | 6 / 6 通过 |
+| 1440 / 980 / 390px 看板 | 浏览器实测，无页面横向溢出 |
+| 390px Trace / Chat / Prompt / Eval | 浏览器实测，无页面横向溢出 |
+| 桌面页面与真实搜索 | 浏览器实测；DeepSeek 关键词返回 7 条已有运行 |
+
+截图来自本地真实数据库页面（演示标识保留），未向付费模型提交新请求：
+
+- [桌面看板](screenshots/dashboard-1440.png)
+- [平板看板](screenshots/dashboard-980.png)
+- [手机看板](screenshots/dashboard-390.png)
+- [追踪工作台](screenshots/traces-1440.png)
+- [对话调试](screenshots/chat-1440.png)
+- [提示词版本详情](screenshots/prompt-detail-1440.png)
+
+本次没有执行公网部署，也没有新增价格或团队权限能力；这些边界见当前功能 PRD。

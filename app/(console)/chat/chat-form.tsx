@@ -227,6 +227,25 @@ export function ChatForm({ models, hasChatApiKey, defaultModel }: { models: Mode
     <div className="chat-workbench">
       <aside className="chat-live-panel" aria-label="当前对话实时信息">
         <section className="section-band">
+          <h2>设置</h2>
+          <label>
+            模型
+            <select value={model} onChange={(event) => setModel(event.target.value)} disabled={models.length === 0 || sending}>
+              {!selectedModel ? <option value={model} disabled>请选择可用模型</option> : null}
+              {models.map((option) => (
+                <option key={option.id} value={option.modelName}>
+                  {option.providerName} / {option.displayName ?? option.modelName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="checkbox-row">
+            <input type="checkbox" checked={stream} onChange={(event) => setStream(event.target.checked)} disabled={sending} />
+            流式输出
+          </label>
+          {disabledReason ? <p className="form-error">{disabledReason}</p> : null}
+        </section>
+        <section className="section-band">
           <div className="chat-panel-head">
             <div>
               <p className="eyebrow">实时运行</p>
@@ -286,25 +305,7 @@ export function ChatForm({ models, hasChatApiKey, defaultModel }: { models: Mode
           ) : null}
         </section>
 
-        <section className="section-band">
-          <h2>设置</h2>
-          <label>
-            模型
-            <select value={model} onChange={(event) => setModel(event.target.value)} disabled={models.length === 0 || sending}>
-              {!selectedModel ? <option value={model} disabled>请选择可用模型</option> : null}
-              {models.map((option) => (
-                <option key={option.id} value={option.modelName}>
-                  {option.providerName} / {option.displayName ?? option.modelName}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="checkbox-row">
-            <input type="checkbox" checked={stream} onChange={(event) => setStream(event.target.checked)} disabled={sending} />
-            流式输出
-          </label>
-          {disabledReason ? <p className="form-error">{disabledReason}</p> : null}
-        </section>
+
       </aside>
 
       <section className="chat-conversation" aria-label="智能体对话">

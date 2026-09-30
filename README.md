@@ -2,7 +2,9 @@
 
 AI 网关与 Agent 可观测控制台。Rust Gateway 代理 OpenAI-compatible 调用并写入 Trace；Next.js Console 提供治理看板、追踪瀑布图、对话调试、Prompt 版本管理和 Eval 回归。两者共享 PostgreSQL，Prisma schema 是数据契约。
 
-## 当前能力（2026-09-29）
+当前功能基线见 [当前功能 PRD](TraceForge_AI网关与Agent可观测平台_PRD.md)，本轮前端规范见 [Base UI 重构 PRD](docs/ui-redesign/UI_REDESIGN_PRD.md)。
+
+## 当前能力（2026-09-30）
 
 - **治理看板**：请求量、失败率、P95、Token、成本、日趋势、模型/供应商、限流、fallback 与流式错误，全部读取持久化数据。最近列表最多 9 个 Run，统计不受列表限制。
 - **Trace**：Run / Span / Event、调用树、瀑布图、责任域归因；可识别项目的网关拒绝允许没有 Span。

@@ -1,119 +1,56 @@
-# PRD: TraceForge UI 高保真控制台改造
+# TraceForge Base UI 高保真重构 PRD
 
-## Problem Statement
+日期：2026-09-30。功能真相见根目录《TraceForge_AI网关与Agent可观测平台_PRD.md》。本文件替代此前深绿色、密集三栏及模拟指标方案。
 
-TraceForge 已经具备 AI 网关、TraceRun/TraceSpan/TraceEvent 可观测、成本 Dashboard、Prompt 版本管理和 Eval 回归评测能力，但当前 Console UI 仍偏基础后台形态：页面之间割裂、信息密度不足、Trace 诊断路径不够像一个真正的事故指挥工作台，Prompt/Eval 的发布证据也没有形成独立的工作区体验。
+## 设计目标
 
-用户希望将当前项目 UI 完全重构为高保真产品界面：整体控制台采用 Incident Command 方向，Dashboard 吸收密集运维表格和实时治理面板，Prompt/Eval 模块采用 Regression Studio 工作区风格。现有数据库支持不了的展示数据可以先用明确的 mock 数据补足，但 mock 必须集中、可审计、不可污染生产数据模型。
+把可观测工作台做成能长时间阅读和操作的工程工具：清晰的层级、充分的内容宽度、真实指标、短路径排障。视觉重构不新增后端业务承诺。
 
-## Solution
+## 视觉系统
 
-把 TraceForge Console 改造成三个一致但各有重心的高保真工作区：
+- 画布 #F6F8FB，内容 #FFFFFF，正文 #202939，次级文字 #66758A，强调蓝 #2563EB，边界 #E3E8EF。
+- 红色仅用于错误，绿色仅用于成功；导航、品牌和操作使用蓝色，不再让整个页面带绿色。
+- 使用现有 Geist，中文回落 PingFang SC / Microsoft YaHei；正文 14px、辅助 12px、标题 28px、主指标 30px；数据使用等宽数字，代码才用等宽字体。
+- 220px 浅色侧栏、64px 顶栏；正文水平间距 28–32px，最大内容宽 1600px。
+- 输入/按钮至少 36px；移动端触控 44px；圆角按层级区分：控件 7px、面板 12px、状态 pill。
+- 细边界表达分区，不给所有区域套同样的卡片；无大面积渐变、无发光、无多余装饰编号。
+- 动画只反馈交互，120–180ms；尊重 reduced-motion。
 
-1. Incident Command：以失败 TraceRun 定位为主线，在同一屏完成“筛失败 → 看 Waterfall/Span Tree → 定 Responsibility”的三步诊断。
-2. Live Governance Dashboard：以网关运行治理为主线，在同一屏查看请求量、失败率、P95 延迟、成本、Token、fallback、stream interruption、Provider/Model 健康度、限流事实和 UsageDaily 趋势。
-3. Regression Studio：以 PromptVersion 和 EvalRun 上线证据为主线，在同一屏完成 baseline/candidate diff、Eval 结果比较、失败样本复核、Trace evidence 查看和发布/回滚判断。
+## 信息架构
 
-重构应优先复用当前数据模型和页面能力。缺失字段通过确定性的 mock/view-model 层补足，真实数据优先，mock 只作为 UI 原型完整度和演示状态补位。
+```text
+侧栏                 顶栏：项目上下文 / 搜索 / 演示标识 / 账号
+治理总览             页面标题 + 说明                     操作
+追踪运行             筛选与时间范围
+对话调试             关键指标（四个主指标）
+提示词               每日趋势                    运行概况
+评测                 最近运行（宽表格）
+                     成本拆分 / 供应商健康 / 事件
+```
 
-## User Stories
+看板的主视觉是实际运行趋势与数据结构，不是大标题海报。追踪保留队列 + 证据的诊断流程；窗口不足时治理信息下移。Prompt 与 Eval 统一为工作台，文本与表格的字号/对齐/操作区保持一致。
 
-1. As an AI 应用开发者, I want to filter failed TraceRuns quickly, so that I can start incident diagnosis from the most urgent failures.
-2. As an AI 应用开发者, I want to see failed, running, slow, and all TraceRuns in a compact list, so that I can compare recent calls without jumping between pages.
-3. As an AI 应用开发者, I want to select a TraceRun and inspect its summary in the same screen, so that I do not lose context while diagnosing.
-4. As an AI 应用开发者, I want to see status, error code, latency, total tokens, cost, usage source, PromptVersion, and Eval evidence for a TraceRun, so that I can decide whether the issue is runtime, cost, Prompt, or Eval related.
-5. As an AI 应用开发者, I want to inspect a TraceRun Waterfall, so that I can identify which Span consumed time or failed.
-6. As an AI 应用开发者, I want to inspect a Span Tree table, so that I can understand parent-child execution structure and nested Agent steps.
-7. As an AI 应用开发者, I want failed, degraded, slowest, and costliest Spans to be visually highlighted, so that I can identify likely investigation targets quickly.
-8. As an AI 应用开发者, I want Responsibility to be shown in a right-side rail, so that root-cause attribution stays visible while I inspect the trace.
-9. As an AI 应用开发者, I want Responsibility to follow the project glossary and exclude Prompt quality, so that runtime failures and Eval quality are not mixed.
-10. As an AI 应用开发者, I want fallback events to be visible near the selected TraceRun, so that I can see when primary model failure moved to a backup model.
-11. As an AI 应用开发者, I want stream interruption events to be visible in the TraceRun context, so that I can distinguish upstream interruption from ordinary model failure.
-12. As an AI 应用开发者, I want rate-limit facts to appear near failed calls, so that I can tell whether failure came from gateway policy.
-13. As an AI 应用开发者, I want provider health summaries derived from recent spans, so that I can compare upstream stability without a separate tool.
-14. As an AI 应用开发者, I want slowest and costliest Span summaries, so that I can focus performance and cost optimization.
-15. As an AI 应用开发者, I want links from TraceRun to PromptVersion and Eval evidence, so that I can move from runtime evidence to release evidence.
-16. As an AI 应用开发者, I want the Dashboard to show compact KPI strips, so that I can scan system health quickly.
-17. As an AI 应用开发者, I want request count, failure rate, P95 latency, cost, tokens, fallback count, and stream error count in one row, so that gateway health is visible at a glance.
-18. As an AI 应用开发者, I want dense TraceRun tables on Dashboard, so that operational triage can happen without opening the TraceRun list first.
-19. As an AI 应用开发者, I want an inline selected-row drawer in dense tables, so that I can inspect a problem without navigating away.
-20. As an AI 应用开发者, I want Provider/Model cost breakdown, so that I can identify expensive upstream usage.
-21. As an AI 应用开发者, I want UsageDaily trends to stay visible, so that I can compare recent behavior against longer-term usage.
-22. As an AI 应用开发者, I want Provider health grouped by Provider/Model, so that model-specific instability is not hidden by aggregate numbers.
-23. As an AI 应用开发者, I want rate-limit failures grouped by Provider/Model or configured bucket, so that I can tune API Key limits with evidence.
-24. As an AI 应用开发者, I want fallback chains summarized, so that I can verify backup model behavior.
-25. As an AI 应用开发者, I want stream interruption reasons grouped, so that repeated upstream streaming problems become visible.
-26. As an AI 应用开发者, I want mock-only live ingest and freshness values to be deterministic, so that prototype screenshots and demos are stable.
-27. As an AI 应用开发者, I want mock data to be auditable internally, so that nobody confuses mock UI facts with database truth.
-28. As an AI 应用开发者, I want unsupported navigation such as Alerts hidden until implemented, so that the product does not promise unavailable workflows.
-29. As a Prompt owner, I want a Regression Studio workspace, so that Prompt changes can be evaluated like release candidates.
-30. As a Prompt owner, I want baseline and candidate PromptVersion selectors, so that I can compare a production version with a draft.
-31. As a Prompt owner, I want a side-by-side diff editor, so that additions and removals are easy to review.
-32. As a Prompt owner, I want Run eval to be available from the Regression Studio, so that I can validate a candidate PromptVersion directly.
-33. As a Prompt owner, I want Promote and Rollback actions near Eval evidence, so that release decisions are tied to regression results.
-34. As a Prompt owner, I want an Eval summary rail, so that pass rate, regressions, improvements, total cases, and manual review state stay visible.
-35. As a Prompt owner, I want failed Eval cases listed with reasons, so that I can review what blocks promotion.
-36. As a Prompt owner, I want failed Eval cases to link to trace evidence when available, so that I can connect offline regression with runtime behavior.
-37. As a Prompt owner, I want an assertion matrix, so that I can see which behavior categories are weakening.
-38. As a Prompt owner, I want compare-run charts for pass rate, latency, cost, and failure domains, so that quality and operational impact are reviewed together.
-39. As a Prompt owner, I want manual review states to remain actionable, so that human judgement can be part of the release gate.
-40. As a Prompt owner, I want Prompt quality to stay in Eval workflows, so that Trace responsibility remains focused on runtime failure attribution.
-41. As a Console user, I want the same global shell across Dashboard, TraceRuns, Prompt, Eval, and Chat, so that navigation feels coherent.
-42. As a Console user, I want a compact top command bar, so that project, search, time range, live state, and environment controls are always reachable.
-43. As a Console user, I want the UI to remain readable on desktop and tablet widths, so that dense operational screens do not collapse.
-44. As a Console user, I want tables to scroll horizontally when needed, so that data is not crushed or overlapped.
-45. As a Console user, I want clear empty, error, and mock-backed states, so that missing data does not look broken.
-46. As a Console user, I want keyboard focus to remain visible, so that dense controls remain accessible.
-47. As a project maintainer, I want reusable UI primitives, so that page rewrites do not duplicate styling and behavior.
-48. As a project maintainer, I want view-model adapters between Prisma results and UI components, so that UI density does not leak formatting logic into queries.
-49. As a project maintainer, I want no new dependency by default, so that the redesign stays small and reversible.
-50. As a project maintainer, I want build and schema validation to pass after each vertical slice, so that visual work does not destabilize the app.
+## 交互契约
 
-## Implementation Decisions
+- Base UI：实际 Button、Input、Tooltip 与组合渲染；沿用现有共享组件路径。原生 select 和现有业务表单保持语义，不迁移未使用的组件文件。
+- 默认服务端获取数据；只把交互区域做成客户端组件。
+- 搜索必须明确其范围，按现有 Trace 名称/模型/供应商过滤能力执行。
+- 项目切换只在实际支持的路径中筛选，不将装饰选择框当作功能。
+- 无功能的通知、列设置、密度、对比模型等按钮删除或改为有意义的导航，不能留下空点击。
+- 保留状态语义、表单 name/action、深链和测试依赖的用户可见行为。
+- 未知成本、未选中运行、执行中/失败/空数据使用真实状态；禁止补假趋势与模拟实时指标。
 
-- The redesign will use the Round 2 prototype set as the target visual direction.
-- The global shell will be unified before page-specific rewrites.
-- The supported primary navigation remains Dashboard, Chat, TraceRuns, Prompt, and Eval.
-- Unsupported prototype-only areas such as Alerts, ticketing, saved views, stakeholder approval, and guardrail center are out of the real UI until matching data and workflows exist.
-- Reusable console primitives will be introduced for shell, top command bar, metric strips, badges, filter bars, dense tables, governance rails, mini charts, waterfall timeline, span tree table, prompt diff, and Eval evidence.
-- Route-level Prisma reads may remain local to each route, but display data will be normalized through view-model helpers before rendering.
-- Missing data will be supplied by deterministic mock helpers, never by writing mock rows into the database.
-- Mock view models will internally track whether a displayed fact is live, derived, or mock.
-- Incident Command will combine TraceRun list, selected run detail, Waterfall, Span Tree, and live governance rail into a single diagnostic workflow.
-- Dashboard will combine compact KPIs, dense TraceRun table, live governance rail, UsageDaily trends, and model/provider breakdown.
-- Regression Studio will combine PromptVersion diff, Eval summary, failed cases, assertion matrix, compare runs, and Trace evidence.
-- Prompt quality will remain in Eval workflows and will not be included in Trace runtime Responsibility.
-- The UI will use current data where possible: TraceRun, TraceSpan, TraceEvent, Prompt, PromptVersion, EvalDataset, EvalCase, EvalRun, EvalResult, UsageDaily, ModelProvider, ModelConfig, and ApiKey.
-- Provider health, P95, failure rate, cost, fallback summaries, stream interruption groupings, slowest span, costliest span, and Eval regressions will be derived from current data.
-- Live ingest, freshness, utilization buckets, incomplete release checklist items, sparse trends, and missing trace-evidence links may use mock data.
-- Desktop is the primary fidelity target, with responsive hardening for tablet and mobile.
-- No new dependency should be introduced unless a later implementation issue explicitly justifies it.
+## 自审后的取舍
 
-## Testing Decisions
+本地设计检索提供的数据密集仪表盘建议适用；其营销落地页/销售转化建议不适用于本产品，未采用。选择轻量工程工作台布局，以真实运行证据与清晰导航形成识别度，避免七张等权卡片和三个滚动栏争夺首屏。
 
-- Tests should verify externally visible behavior and user workflows, not implementation details or CSS class names.
-- The highest useful seams are route-level rendered pages and view-model adapters.
-- View-model tests should cover real-data-first behavior, derived metrics, deterministic mock fallback, and source marking.
-- Incident Command tests should cover failed TraceRun diagnosis, Responsibility rendering, Waterfall/Span Tree visibility, fallback events, and missing-data states.
-- Dashboard tests should cover KPI aggregation, provider/model grouping, governance rail groupings, UsageDaily trends, and mock-backed live indicators.
-- Regression Studio tests should cover baseline/candidate selection, diff visibility, Eval summary, failed case grouping, assertion matrix fallback, and release checklist state.
-- Build validation remains required after implementation slices.
-- Prisma schema validation remains required to ensure the redesign does not accidentally require unsupported schema changes.
-- Manual visual QA should compare the implemented routes against the three Round 2 prototypes at desktop width.
-- Responsive QA should check that tables scroll rather than overlap and that right rails collapse below main content at narrower widths.
+## 验收
 
-## Out of Scope
+- 1440/980/390px 截图；无页面横向溢出、KPI 截断、按钮重叠。
+- 看板、Trace、Chat、Prompt、Eval 主流程与键盘焦点验证。
+- 43 项现有 E2E + 1 项键盘搜索 E2E、9 项单元测试、类型、Lint、生产构建；实际结果见 UI_REDESIGN_PLAN.md。
+- 不改变价格、数据库结构、Gateway 执行、Auth 或 Prompt/Eval 的业务语义。
 
-- Adding a real Alerts product area.
-- Adding ticketing, saved views, stakeholder approval, or guardrail-center workflows.
-- Changing the production database schema just to support prototype decoration.
-- Implementing a new icon dependency unless separately approved.
-- Rewriting gateway runtime behavior.
-- Changing Trace responsibility semantics to include Prompt quality.
-- Guaranteeing pixel-perfect generated-image text reproduction.
+## 参考
 
-## Further Notes
-
-- The redesign should use the project glossary: TraceRun, TraceSpan, TraceEvent, Responsibility, Chat Playground, PromptVersion, EvalDataset, EvalRun, and EvalResult.
-- The first implementation issue should establish the design foundation and mock/view-model rules before high-churn page rewrites.
-- The final implementation should clearly avoid making mock-only facts look like persisted production truth.
+用户指定仓库：https://github.com/mui/base-ui 。依赖已存在；以本地安装版本类型与官方组件文档核对 API。

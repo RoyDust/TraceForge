@@ -25,9 +25,9 @@ export default async function ChatPage() {
     <main className="chat-page">
       <header className="page-head">
         <div>
-          <p className="eyebrow">对话调试台</p>
+          <p className="eyebrow">PLAYGROUND</p>
           <h1>对话测试</h1>
-          <p className="muted">右侧正常对话，左侧实时观察这次网关调用。</p>
+          <p className="muted">发送一次真实请求，同步查看延迟、用量和运行证据。</p>
         </div>
         <span className="badge">{models.length} 个可用模型</span>
       </header>
